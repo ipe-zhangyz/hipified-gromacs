@@ -55,12 +55,20 @@ if(GMX_USE_CUDA)
     #
     # Perhaps FindCUDA's support for single compilation units will help?
     if (NOT GMX_CLANG_CUDA)
+        if(CUDA_FOUND)
         # Work around FindCUDA that prevents using target_link_libraries()
         # with keywords otherwise...
         set(CUDA_LIBRARIES PRIVATE ${CUDA_LIBRARIES})
         cuda_add_library(gpu_utilstest_cuda
             devicetransfers.cu
             )
+        endif()
+	if(HIP_FOUND)
+	    set(CUDA_LIBRARIES PRIVATE ${CUDA_LIBRARIES})
+            #set(MY_HIPCC_OPTIONS "-D__clang__ -D__HIP__ -U__HCC__ -fPIC -std=c++14")
+	    set(MY_HCC_OPTIONS "-fPIC -fno-gpu-rdc -std=c++14")
+	    hip_add_library(gpu_utilstest_cuda devicetransfers.cu HIPCC_OPTIONS ${MY_HIPCC_OPTIONS} HCC_OPTIONS ${MY_HCC_OPTIONS} NVCC_OPTIONS ${MY_NVCC_OPTIONS} )
+	endif()
     else()
         include(gmxClangCudaUtils)
         gmx_compile_cuda_file_with_clang(devicetransfers.cu)
@@ -68,9 +76,11 @@ if(GMX_USE_CUDA)
             devicetransfers.cu
             )
     endif()
-
-    target_link_libraries(gpu_utilstest_cuda PRIVATE ${GMX_EXTRA_LIBRARIES} libgromacs)
-
+    if(CUDA_FOUND)
+      target_link_libraries(gpu_utilstest_cuda PRIVATE ${GMX_EXTRA_LIBRARIES} libgromacs)
+    elseif(HIP_FOUND)
+      target_link_libraries(gpu_utilstest_cuda PRIVATE ${GMX_EXTRA_LIBRARIES} libgromacs )
+    endif()
 elseif(GMX_USE_OPENCL)
     # Do normal compilation of OpenCL files
     list(APPEND SOURCES_FROM_CXX
