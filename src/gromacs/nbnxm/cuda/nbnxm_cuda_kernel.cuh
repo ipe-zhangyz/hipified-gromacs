@@ -389,7 +389,7 @@ __launch_bounds__(THREADS_PER_BLOCK)
             {
                 cjs[tidxi + tidxj * c_nbnxnGpuJgroupSize / c_splitClSize] = pl_cj4[j4].cj[tidxi];
             }
-            __syncwarp(c_fullWarpMask);
+            gmx_syncwarp(c_fullWarpMask);
 
             /* Unrolling this loop
                - with pruning leads to register spilling;
@@ -437,7 +437,7 @@ __launch_bounds__(THREADS_PER_BLOCK)
                             /* If _none_ of the atoms pairs are in cutoff range,
                                the bit corresponding to the current
                                cluster-pair in imask gets set to 0. */
-                            if (!__any_sync(c_fullWarpMask, r2 < rlist_sq))
+                            if (!gmx_any_sync(c_fullWarpMask, r2 < rlist_sq))
                             {
                                 imask &= ~mask_ji;
                             }
@@ -475,7 +475,7 @@ __launch_bounds__(THREADS_PER_BLOCK)
 #    endif     /* LJ_COMB */
 
                                 // Ensure distance do not become so small that r^-12 overflows
-                                r2 = max(r2, NBNXN_MIN_RSQ);
+                                r2 = std::max(r2, NBNXN_MIN_RSQ);
 
                                 inv_r  = rsqrt(r2);
                                 inv_r2 = inv_r * inv_r;
@@ -617,7 +617,7 @@ __launch_bounds__(THREADS_PER_BLOCK)
 #    endif
         }
         // avoid shared memory WAR hazards between loop iterations
-        __syncwarp(c_fullWarpMask);
+        gmx_syncwarp(c_fullWarpMask);
     }
 
     /* skip central shifts when summing shift forces */

@@ -98,17 +98,17 @@ __device__ __forceinline__ void reduce_atom_forces(float3* __restrict__ sm_force
                       "TODO: rework for atomDataSize > warp_size (order 8 or larger)");
         const int width = atomDataSize;
 
-        fx += __shfl_down_sync(activeMask, fx, 1, width);
-        fy += __shfl_up_sync(activeMask, fy, 1, width);
-        fz += __shfl_down_sync(activeMask, fz, 1, width);
+        fx += gmx_shfl_down_sync(activeMask, fx, 1, width);
+        fy += gmx_shfl_up_sync(activeMask, fy, 1, width);
+        fz += gmx_shfl_down_sync(activeMask, fz, 1, width);
 
         if (splineIndex & 1)
         {
             fx = fy;
         }
 
-        fx += __shfl_down_sync(activeMask, fx, 2, width);
-        fz += __shfl_up_sync(activeMask, fz, 2, width);
+        fx += gmx_shfl_down_sync(activeMask, fx, 2, width);
+        fz += gmx_shfl_up_sync(activeMask, fz, 2, width);
 
         if (splineIndex & 2)
         {
@@ -122,7 +122,7 @@ __device__ __forceinline__ void reduce_atom_forces(float3* __restrict__ sm_force
         // We have to just further reduce those groups of 4
         for (int delta = 4; delta < atomDataSize; delta <<= 1)
         {
-            fx += __shfl_down_sync(activeMask, fx, delta, width);
+            fx += gmx_shfl_down_sync(activeMask, fx, delta, width);
         }
 
         const int dimIndex = splineIndex;
@@ -194,7 +194,7 @@ __device__ __forceinline__ void reduce_atom_forces(float3* __restrict__ sm_force
                 }
             }
 
-            __syncwarp();
+            gmx_syncwarp();
 
             const float n         = read_grid_size(realGridSizeFP, dimIndex);
             const int   atomIndex = sourceIndex / minStride;
@@ -351,7 +351,7 @@ __launch_bounds__(c_gatherMaxThreadsPerBlock, c_gatherMinBlocksPerMP) __global__
         }
         calculate_splines<order, atomsPerBlock, atomsPerWarp, true, false>(
                 kernelParams, atomIndexOffset, atomX, atomCharge, sm_theta, sm_dtheta, sm_gridlineIndices);
-        __syncwarp();
+        gmx_syncwarp();
     }
     float fx = 0.0f;
     float fy = 0.0f;
@@ -448,7 +448,7 @@ __launch_bounds__(c_gatherMaxThreadsPerBlock, c_gatherMinBlocksPerMP) __global__
         sm_forces[forceIndexLocal] = result;
     }
 
-    __syncwarp();
+    gmx_syncwarp();
     assert(atomsPerBlock <= warp_size);
 
     /* Writing or adding the final forces component-wise, single warp */

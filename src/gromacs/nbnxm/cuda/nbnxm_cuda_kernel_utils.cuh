@@ -385,7 +385,7 @@ static __forceinline__ __device__ float interpolate_coulomb_force_r(const cu_nbp
 
     float2 d01 = fetch_coulomb_force_r(nbparam, index);
 
-    return lerp(d01.x, d01.y, fraction);
+    return lerp((float)d01.x, (float)d01.y, fraction);
 }
 
 /*! Fetch C6 and C12 from the parameter table.
@@ -474,24 +474,24 @@ static __forceinline__ __device__ void
 static __forceinline__ __device__ void
                        reduce_force_j_warp_shfl(float3 f, float3* fout, int tidxi, int aidx, const unsigned int activemask)
 {
-    f.x += __shfl_down_sync(activemask, f.x, 1);
-    f.y += __shfl_up_sync(activemask, f.y, 1);
-    f.z += __shfl_down_sync(activemask, f.z, 1);
+    f.x += gmx_shfl_down_sync(activemask, f.x, 1);
+    f.y += gmx_shfl_up_sync(activemask, f.y, 1);
+    f.z += gmx_shfl_down_sync(activemask, f.z, 1);
 
     if (tidxi & 1)
     {
         f.x = f.y;
     }
 
-    f.x += __shfl_down_sync(activemask, f.x, 2);
-    f.z += __shfl_up_sync(activemask, f.z, 2);
+    f.x += gmx_shfl_down_sync(activemask, f.x, 2);
+    f.z += gmx_shfl_up_sync(activemask, f.z, 2);
 
     if (tidxi & 2)
     {
         f.x = f.z;
     }
 
-    f.x += __shfl_down_sync(activemask, f.x, 4);
+    f.x += gmx_shfl_down_sync(activemask, f.x, 4);
 
     if (tidxi < 3)
     {
@@ -606,17 +606,17 @@ static __forceinline__ __device__ void reduce_force_i_warp_shfl(float3          
                                                                 int                aidx,
                                                                 const unsigned int activemask)
 {
-    fin.x += __shfl_down_sync(activemask, fin.x, c_clSize);
-    fin.y += __shfl_up_sync(activemask, fin.y, c_clSize);
-    fin.z += __shfl_down_sync(activemask, fin.z, c_clSize);
+    fin.x += gmx_shfl_down_sync(activemask, fin.x, c_clSize);
+    fin.y += gmx_shfl_up_sync(activemask, fin.y, c_clSize);
+    fin.z += gmx_shfl_down_sync(activemask, fin.z, c_clSize);
 
     if (tidxj & 1)
     {
         fin.x = fin.y;
     }
 
-    fin.x += __shfl_down_sync(activemask, fin.x, 2 * c_clSize);
-    fin.z += __shfl_up_sync(activemask, fin.z, 2 * c_clSize);
+    fin.x += gmx_shfl_down_sync(activemask, fin.x, 2 * c_clSize);
+    fin.z += gmx_shfl_up_sync(activemask, fin.z, 2 * c_clSize);
 
     if (tidxj & 2)
     {
@@ -682,8 +682,8 @@ static __forceinline__ __device__ void
 #    pragma unroll 5
     for (i = 0; i < 5; i++)
     {
-        E_lj += __shfl_down_sync(activemask, E_lj, sh);
-        E_el += __shfl_down_sync(activemask, E_el, sh);
+        E_lj += gmx_shfl_down_sync(activemask, E_lj, sh);
+        E_el += gmx_shfl_down_sync(activemask, E_el, sh);
         sh += sh;
     }
 

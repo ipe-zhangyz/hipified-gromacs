@@ -35,6 +35,7 @@
 
 #include "gmxpre.h"
 
+#include <hip/hip_runtime.h>
 #include "cuda_version_information.h"
 
 #include "gromacs/utility/stringutil.h"

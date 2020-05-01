@@ -1,3 +1,4 @@
+#include <hip/hip_runtime.h>
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
@@ -64,6 +65,78 @@ static const int warp_size_log2 = 5;
  */
 static const unsigned int c_fullWarpMask = 0xffffffff;
 
+/* Below are backward-compatibility wrappers for CUDA 9 warp-wide intrinsics. */
+
+/*! \brief Compatibility wrapper around the CUDA __syncwarp() instrinsic.  */
+static __forceinline__ __device__
+void gmx_syncwarp(const unsigned int activeMask = c_fullWarpMask)
+{
+#if GMX_CUDA_VERSION < 9000
+    /* no sync needed on pre-Volta. */
+    GMX_UNUSED_VALUE(activeMask);
+#else
+    __syncwarp(activeMask);
+#endif
+}
+
+/*! \brief Compatibility wrapper around the CUDA __ballot()/__ballot_sync() instrinsic.  */
+static __forceinline__ __device__
+unsigned int gmx_ballot_sync(const unsigned int activeMask,
+                             const int          pred)
+{
+#if GMX_CUDA_VERSION < 9000
+    GMX_UNUSED_VALUE(activeMask);
+    return __ballot(pred);
+#else
+    return __ballot_sync(activeMask, pred);
+#endif
+}
+
+/*! \brief Compatibility wrapper around the CUDA __any()/__any_sync() instrinsic.  */
+static __forceinline__ __device__
+int gmx_any_sync(const unsigned int activeMask,
+                 const int          pred)
+{
+#if GMX_CUDA_VERSION < 9000
+    GMX_UNUSED_VALUE(activeMask);
+    return __any(pred);
+#else
+    return __any_sync(activeMask, pred);
+#endif
+}
+
+/*! \brief Compatibility wrapper around the CUDA __shfl_up()/__shfl_up_sync() instrinsic.  */
+template <typename T>
+static __forceinline__ __device__
+T gmx_shfl_up_sync(const unsigned int activeMask,
+                   const T            var,
+                   unsigned int       offset,
+                   int                width = warp_size)
+{
+#if GMX_CUDA_VERSION < 9000
+    GMX_UNUSED_VALUE(activeMask);
+    return __shfl_up(var, offset, width);
+#else
+    return __shfl_up_sync(activeMask, var, offset, width);
+#endif
+}
+
+/*! \brief Compatibility wrapper around the CUDA __shfl_down()/__shfl_down_sync() instrinsic.  */
+template <typename T>
+static __forceinline__ __device__
+T gmx_shfl_down_sync(const unsigned int activeMask,
+                     const T            var,
+                     unsigned int       offset,
+                     int                width = warp_size)
+{
+#if GMX_CUDA_VERSION < 9000
+    GMX_UNUSED_VALUE(activeMask);
+    return __shfl_down(var, offset, width);
+#else
+    return __shfl_down_sync(activeMask, var, offset, width);
+#endif
+}
+
 /*! \brief Allow disabling CUDA textures using the GMX_DISABLE_CUDA_TEXTURES macro.
  *
  *  Only texture objects supported.
@@ -73,6 +146,7 @@ static const unsigned int c_fullWarpMask = 0xffffffff;
  *  to have fallback for texture-less reads (direct/LDG loads), all new code needs
  *  to provide fallback code.
  */
+#define GMX_DISABLE_CUDA_TEXTURES
 #if defined(GMX_DISABLE_CUDA_TEXTURES) || (defined(__clang__) && defined(__CUDA__))
 #    define DISABLE_CUDA_TEXTURES 1
 #else

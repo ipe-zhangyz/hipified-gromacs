@@ -105,7 +105,7 @@ extern template void pme_gather_kernel<c_pmeOrder, false, c_wrapX, c_wrapY, fals
 PmeGpuProgramImpl::PmeGpuProgramImpl(const gmx_device_info_t*)
 {
     // kernel parameters
-    warpSize              = warp_size;
+    hipWarpSize              = warp_size;
     spreadWorkGroupSize   = c_spreadMaxThreadsPerBlock;
     solveMaxWorkGroupSize = c_solveMaxThreadsPerBlock;
     gatherWorkGroupSize   = c_gatherMaxThreadsPerBlock;

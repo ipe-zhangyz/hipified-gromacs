@@ -250,7 +250,7 @@ __launch_bounds__(c_spreadMaxThreadsPerBlock) CLANG_DISABLE_OPTIMIZATION_ATTRIBU
         }
         calculate_splines<order, atomsPerBlock, atomsPerWarp, false, writeGlobal>(
                 kernelParams, atomIndexOffset, atomX, atomCharge, sm_theta, &dtheta, sm_gridlineIndices);
-        __syncwarp();
+        gmx_syncwarp();
     }
     else
     {

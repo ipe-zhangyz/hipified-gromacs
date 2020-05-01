@@ -63,8 +63,8 @@ public:
     GpuRegionTimerImpl()
     {
         const int eventFlags = hipEventDefault;
-        CU_RET_ERR(hipEventCreate(&eventStart_, eventFlags), "GPU timing creation failure");
-        CU_RET_ERR(hipEventCreate(&eventStop_, eventFlags), "GPU timing creation failure");
+        CU_RET_ERR(hipEventCreateWithFlags(&eventStart_, eventFlags), "GPU timing creation failure");
+        CU_RET_ERR(hipEventCreateWithFlags(&eventStop_, eventFlags), "GPU timing creation failure");
     }
     ~GpuRegionTimerImpl()
     {

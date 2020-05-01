@@ -94,7 +94,7 @@ struct PmeGpuProgramImpl
      * For CUDA, this is a static value that comes from gromacs/gpu_utils/cuda_arch_utils.cuh;
      * for OpenCL, we have to query it dynamically.
      */
-    size_t warpSize;
+    size_t hipWarpSize;
 
     //@{
     /**
