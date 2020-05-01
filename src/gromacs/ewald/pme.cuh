@@ -51,16 +51,16 @@
 
 /*! \brief \internal
  * A single structure encompassing all the PME data used in CUDA kernels.
- * This inherits from PmeGpuKernelParamsBase and adds a couple cudaTextureObject_t handles,
+ * This inherits from PmeGpuKernelParamsBase and adds a couple hipTextureObject_t handles,
  * which we would like to avoid in plain C++.
  */
 struct PmeGpuCudaKernelParams : PmeGpuKernelParamsBase
 {
     /* These are CUDA texture objects, related to the grid size. */
     /*! \brief CUDA texture object for accessing grid.d_fractShiftsTable */
-    cudaTextureObject_t fractShiftsTableTexture;
+    hipTextureObject_t fractShiftsTableTexture;
     /*! \brief CUDA texture object for accessing grid.d_gridlineIndicesTable */
-    cudaTextureObject_t gridlineIndicesTableTexture;
+    hipTextureObject_t gridlineIndicesTableTexture;
 };
 
 #endif

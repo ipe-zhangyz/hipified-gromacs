@@ -44,7 +44,7 @@
  */
 
 //! \brief GPU command stream
-using CommandStream = cudaStream_t;
+using CommandStream = hipStream_t;
 //! \brief Single GPU call timing event - meaningless in CUDA
 using CommandEvent = void;
 //! \brief Context used explicitly in OpenCL, does nothing in CUDA

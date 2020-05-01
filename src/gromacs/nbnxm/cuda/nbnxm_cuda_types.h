@@ -201,14 +201,14 @@ struct cu_nbparam
 
     /* LJ non-bonded parameters - accessed through texture memory */
     float*              nbfp; /**< nonbonded parameter table with C6/C12 pairs per atom type-pair, 2*ntype^2 elements */
-    cudaTextureObject_t nbfp_texobj; /**< texture object bound to nbfp */
+    hipTextureObject_t nbfp_texobj; /**< texture object bound to nbfp */
     float*              nbfp_comb; /**< nonbonded parameter table per atom type, 2*ntype elements */
-    cudaTextureObject_t nbfp_comb_texobj; /**< texture object bound to nbfp_texobj */
+    hipTextureObject_t nbfp_comb_texobj; /**< texture object bound to nbfp_texobj */
 
     /* Ewald Coulomb force table data - accessed through texture memory */
     float               coulomb_tab_scale;  /**< table scale/spacing                        */
     float*              coulomb_tab;        /**< pointer to the table in the device memory  */
-    cudaTextureObject_t coulomb_tab_texobj; /**< texture object bound to coulomb_tab        */
+    hipTextureObject_t coulomb_tab_texobj; /**< texture object bound to coulomb_tab        */
 };
 
 /** \internal
@@ -265,12 +265,12 @@ struct gmx_nbnxn_cuda_t
     //! staging area where fshift/energies get downloaded
     nb_staging_t nbst;
     //! local and non-local GPU streams
-    gmx::EnumerationArray<Nbnxm::InteractionLocality, cudaStream_t> stream;
+    gmx::EnumerationArray<Nbnxm::InteractionLocality, hipStream_t> stream;
 
     /** events used for synchronization */
-    cudaEvent_t nonlocal_done; /**< event triggered when the non-local non-bonded kernel
+    hipEvent_t nonlocal_done; /**< event triggered when the non-local non-bonded kernel
                                   is done (and the local transfer can proceed)           */
-    cudaEvent_t misc_ops_and_local_H2D_done; /**< event triggered when the tasks issued in
+    hipEvent_t misc_ops_and_local_H2D_done; /**< event triggered when the tasks issued in
                                                 the local stream that need to precede the
                                                 non-local force or buffer operation calculations are
                                                 done (e.g. f buffer 0-ing, local x/q H2D, buffer op

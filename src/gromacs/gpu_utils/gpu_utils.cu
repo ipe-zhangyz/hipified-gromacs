@@ -1,3 +1,4 @@
+#include "hip/hip_runtime.h"
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
@@ -47,7 +48,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include <cuda_profiler_api.h>
+#include <hip/hip_profile.h>
 
 #include "gromacs/gpu_utils/cudautils.cuh"
 #include "gromacs/gpu_utils/pmalloc_cuda.h"
@@ -75,12 +76,12 @@ static bool cudaProfilerRun = ((getenv("NVPROF_ID") != nullptr));
 /** Dummy kernel used for sanity checking. */
 static __global__ void k_dummy_test(void) {}
 
-static cudaError_t checkCompiledTargetCompatibility(int deviceId, const cudaDeviceProp& deviceProp)
+static hipError_t checkCompiledTargetCompatibility(int deviceId, const hipDeviceProp_t& deviceProp)
 {
-    cudaFuncAttributes attributes;
-    cudaError_t        stat = cudaFuncGetAttributes(&attributes, k_dummy_test);
+    hipFuncAttributes attributes;
+    hipError_t        stat = hipFuncGetAttributes(&attributes, reinterpret_cast<const void*>(k_dummy_test));
 
-    if (cudaErrorInvalidDeviceFunction == stat)
+    if (hipErrorInvalidDeviceFunction == stat)
     {
         fprintf(stderr,
                 "\nWARNING: The %s binary does not include support for the CUDA architecture of "
@@ -98,19 +99,19 @@ static cudaError_t checkCompiledTargetCompatibility(int deviceId, const cudaDevi
 
 bool isHostMemoryPinned(const void* h_ptr)
 {
-    cudaPointerAttributes memoryAttributes;
-    cudaError_t           stat = cudaPointerGetAttributes(&memoryAttributes, h_ptr);
+    hipPointerAttribute_t memoryAttributes;
+    hipError_t           stat = hipPointerGetAttributes(&memoryAttributes, h_ptr);
 
     bool result = false;
     switch (stat)
     {
-        case cudaSuccess: result = true; break;
+        case hipSuccess: result = true; break;
 
-        case cudaErrorInvalidValue:
+        case hipErrorInvalidValue:
             // If the buffer was not pinned, then it will not be recognized by CUDA at all
             result = false;
             // Reset the last error status
-            cudaGetLastError();
+            hipGetLastError();
             break;
 
         default: CU_RET_ERR(stat, "Unexpected CUDA error");
@@ -130,15 +131,15 @@ bool isHostMemoryPinned(const void* h_ptr)
  *
  * TODO: introduce errors codes and handle errors more smoothly.
  */
-static int do_sanity_checks(int dev_id, const cudaDeviceProp& dev_prop)
+static int do_sanity_checks(int dev_id, const hipDeviceProp_t& dev_prop)
 {
-    cudaError_t cu_err;
+    hipError_t cu_err;
     int         dev_count, id;
 
-    cu_err = cudaGetDeviceCount(&dev_count);
-    if (cu_err != cudaSuccess)
+    cu_err = hipGetDeviceCount(&dev_count);
+    if (cu_err != hipSuccess)
     {
-        fprintf(stderr, "Error %d while querying device count: %s\n", cu_err, cudaGetErrorString(cu_err));
+        fprintf(stderr, "Error %d while querying device count: %s\n", cu_err, hipGetErrorString(cu_err));
         return -1;
     }
 
@@ -156,10 +157,10 @@ static int do_sanity_checks(int dev_id, const cudaDeviceProp& dev_prop)
 
     if (dev_id == -1) /* device already selected let's not destroy the context */
     {
-        cu_err = cudaGetDevice(&id);
-        if (cu_err != cudaSuccess)
+        cu_err = hipGetDevice(&id);
+        if (cu_err != hipSuccess)
         {
-            fprintf(stderr, "Error %d while querying device id: %s\n", cu_err, cudaGetErrorString(cu_err));
+            fprintf(stderr, "Error %d while querying device id: %s\n", cu_err, hipGetErrorString(cu_err));
             return -1;
         }
     }
@@ -188,11 +189,11 @@ static int do_sanity_checks(int dev_id, const cudaDeviceProp& dev_prop)
 
     if (id != -1)
     {
-        cu_err = cudaSetDevice(id);
-        if (cu_err != cudaSuccess)
+        cu_err = hipSetDevice(id);
+        if (cu_err != hipSuccess)
         {
             fprintf(stderr, "Error %d while switching to device #%d: %s\n", cu_err, id,
-                    cudaGetErrorString(cu_err));
+                    hipGetErrorString(cu_err));
             return -1;
         }
     }
@@ -200,12 +201,12 @@ static int do_sanity_checks(int dev_id, const cudaDeviceProp& dev_prop)
     cu_err = checkCompiledTargetCompatibility(dev_id, dev_prop);
     // Avoid triggering an error if GPU devices are in exclusive or prohibited mode;
     // it is enough to check for cudaErrorDevicesUnavailable only here because
-    // if we encounter it that will happen in cudaFuncGetAttributes in the above function.
+    // if we encounter it that will happen in hipFuncGetAttributes in the above function.
     if (cu_err == cudaErrorDevicesUnavailable)
     {
         return -2;
     }
-    else if (cu_err != cudaSuccess)
+    else if (cu_err != hipSuccess)
     {
         return -1;
     }
@@ -227,7 +228,7 @@ static int do_sanity_checks(int dev_id, const cudaDeviceProp& dev_prop)
         return -1;
     }
 
-    if (cudaDeviceSynchronize() != cudaSuccess)
+    if (hipDeviceSynchronize() != hipSuccess)
     {
         return -1;
     }
@@ -235,8 +236,8 @@ static int do_sanity_checks(int dev_id, const cudaDeviceProp& dev_prop)
     /* destroy context if we created one */
     if (id != -1)
     {
-        cu_err = cudaDeviceReset();
-        CU_RET_ERR(cu_err, "cudaDeviceReset failed");
+        cu_err = hipDeviceReset();
+        CU_RET_ERR(cu_err, "hipDeviceReset failed");
     }
 
     return 0;
@@ -244,12 +245,12 @@ static int do_sanity_checks(int dev_id, const cudaDeviceProp& dev_prop)
 
 void init_gpu(const gmx_device_info_t* deviceInfo)
 {
-    cudaError_t stat;
+    hipError_t stat;
 
     assert(deviceInfo);
 
-    stat = cudaSetDevice(deviceInfo->id);
-    if (stat != cudaSuccess)
+    stat = hipSetDevice(deviceInfo->id);
+    if (stat != hipSuccess)
     {
         auto message = gmx::formatString("Failed to initialize GPU #%d", deviceInfo->id);
         CU_RET_ERR(stat, message.c_str());
@@ -271,20 +272,20 @@ void free_gpu(const gmx_device_info_t* deviceInfo)
         return;
     }
 
-    cudaError_t stat;
+    hipError_t stat;
 
     if (debug)
     {
         int gpuid;
-        stat = cudaGetDevice(&gpuid);
-        CU_RET_ERR(stat, "cudaGetDevice failed");
+        stat = hipGetDevice(&gpuid);
+        CU_RET_ERR(stat, "hipGetDevice failed");
         fprintf(stderr, "Cleaning up context on GPU ID #%d\n", gpuid);
     }
 
-    stat = cudaDeviceReset();
-    if (stat != cudaSuccess)
+    stat = hipDeviceReset();
+    if (stat != hipSuccess)
     {
-        gmx_warning("Failed to free GPU #%d: %s", deviceInfo->id, cudaGetErrorString(stat));
+        gmx_warning("Failed to free GPU #%d: %s", deviceInfo->id, hipGetErrorString(stat));
     }
 }
 
@@ -304,7 +305,7 @@ gmx_device_info_t* getDeviceInfo(const gmx_gpu_info_t& gpu_info, int deviceId)
  * \returns             true if the GPU properties passed indicate a compatible
  *                      GPU, otherwise false.
  */
-static bool is_gmx_supported_gpu(const cudaDeviceProp& dev_prop)
+static bool is_gmx_supported_gpu(const hipDeviceProp_t& dev_prop)
 {
     return (dev_prop.major >= 3);
 }
@@ -323,7 +324,7 @@ static bool is_gmx_supported_gpu(const cudaDeviceProp& dev_prop)
  *  \param[in]  deviceProp the CUDA device properties of the device checked.
  *  \returns               the status of the requested device
  */
-static int is_gmx_supported_gpu_id(int deviceId, const cudaDeviceProp& deviceProp)
+static int is_gmx_supported_gpu_id(int deviceId, const hipDeviceProp_t& deviceProp)
 {
     if (!is_gmx_supported_gpu(deviceProp))
     {
@@ -349,15 +350,15 @@ static int is_gmx_supported_gpu_id(int deviceId, const cudaDeviceProp& devicePro
 
 bool isGpuDetectionFunctional(std::string* errorMessage)
 {
-    cudaError_t stat;
+    hipError_t stat;
     int         driverVersion = -1;
-    stat                      = cudaDriverGetVersion(&driverVersion);
-    GMX_ASSERT(stat != cudaErrorInvalidValue,
-               "An impossible null pointer was passed to cudaDriverGetVersion");
+    stat                      = hipDriverGetVersion(&driverVersion);
+    GMX_ASSERT(stat != hipErrorInvalidValue,
+               "An impossible null pointer was passed to hipDriverGetVersion");
     GMX_RELEASE_ASSERT(
-            stat == cudaSuccess,
-            gmx::formatString("An unexpected value was returned from cudaDriverGetVersion %s: %s",
-                              cudaGetErrorName(stat), cudaGetErrorString(stat))
+            stat == hipSuccess,
+            gmx::formatString("An unexpected value was returned from hipDriverGetVersion %s: %s",
+                              hipGetErrorName(stat), hipGetErrorString(stat))
                     .c_str());
     bool foundDriver = (driverVersion > 0);
     if (!foundDriver)
@@ -371,28 +372,28 @@ bool isGpuDetectionFunctional(std::string* errorMessage)
     }
 
     int numDevices;
-    stat = cudaGetDeviceCount(&numDevices);
-    if (stat != cudaSuccess)
+    stat = hipGetDeviceCount(&numDevices);
+    if (stat != hipSuccess)
     {
         if (errorMessage != nullptr)
         {
-            /* cudaGetDeviceCount failed which means that there is
+            /* hipGetDeviceCount failed which means that there is
              * something wrong with the machine: driver-runtime
              * mismatch, all GPUs being busy in exclusive mode,
              * invalid CUDA_VISIBLE_DEVICES, or some other condition
              * which should result in GROMACS issuing at least a
              * warning. */
-            errorMessage->assign(cudaGetErrorString(stat));
+            errorMessage->assign(hipGetErrorString(stat));
         }
 
         // Consume the error now that we have prepared to handle
         // it. This stops it reappearing next time we check for
         // errors. Note that if CUDA_VISIBLE_DEVICES does not contain
-        // valid devices, then cudaGetLastError returns the
-        // (undocumented) cudaErrorNoDevice, but this should not be a
+        // valid devices, then hipGetLastError returns the
+        // (undocumented) hipErrorNoDevice, but this should not be a
         // problem as there should be no future CUDA API calls.
         // NVIDIA bug report #2038718 has been filed.
-        cudaGetLastError();
+        hipGetLastError();
         // Can't detect GPUs
         return false;
     }
@@ -409,8 +410,8 @@ void findGpus(gmx_gpu_info_t* gpu_info)
     gpu_info->n_dev_compatible = 0;
 
     int         ndev;
-    cudaError_t stat = cudaGetDeviceCount(&ndev);
-    if (stat != cudaSuccess)
+    hipError_t stat = hipGetDeviceCount(&ndev);
+    if (stat != hipSuccess)
     {
         GMX_THROW(gmx::InternalError(
                 "Invalid call of findGpus() when CUDA API returned an error, perhaps "
@@ -424,11 +425,11 @@ void findGpus(gmx_gpu_info_t* gpu_info)
     snew(devs, ndev);
     for (int i = 0; i < ndev; i++)
     {
-        cudaDeviceProp prop;
-        memset(&prop, 0, sizeof(cudaDeviceProp));
-        stat = cudaGetDeviceProperties(&prop, i);
+        hipDeviceProp_t prop;
+        memset(&prop, 0, sizeof(hipDeviceProp_t));
+        stat = hipGetDeviceProperties(&prop, i);
         int checkResult;
-        if (stat != cudaSuccess)
+        if (stat != hipSuccess)
         {
             // Will handle the error reporting below
             checkResult = egpuInsane;
@@ -459,19 +460,19 @@ void findGpus(gmx_gpu_info_t* gpu_info)
             //
             // Here we also clear the CUDA API error state so potential
             // errors during sanity checks don't propagate.
-            if ((stat = cudaGetLastError()) != cudaSuccess)
+            if ((stat = hipGetLastError()) != hipSuccess)
             {
                 gmx_warning("An error occurred while sanity checking device #%d; %s: %s",
-                            devs[i].id, cudaGetErrorName(stat), cudaGetErrorString(stat));
+                            devs[i].id, hipGetErrorName(stat), hipGetErrorString(stat));
             }
         }
     }
 
-    stat = cudaPeekAtLastError();
-    GMX_RELEASE_ASSERT(stat == cudaSuccess,
+    stat = hipPeekAtLastError();
+    GMX_RELEASE_ASSERT(stat == hipSuccess,
                        gmx::formatString("We promise to return with clean CUDA state, but "
                                          "non-success state encountered: %s: %s",
-                                         cudaGetErrorName(stat), cudaGetErrorString(stat))
+                                         hipGetErrorName(stat), hipGetErrorString(stat))
                                .c_str());
 
     gpu_info->n_dev   = ndev;
@@ -506,7 +507,7 @@ void get_gpu_device_info_string(char* s, const gmx_gpu_info_t& gpu_info, int ind
 int get_current_cuda_gpu_device_id(void)
 {
     int gpuid;
-    CU_RET_ERR(cudaGetDevice(&gpuid), "cudaGetDevice failed");
+    CU_RET_ERR(hipGetDevice(&gpuid), "hipGetDevice failed");
 
     return gpuid;
 }
@@ -526,9 +527,9 @@ void startGpuProfiler(void)
      */
     if (cudaProfilerRun)
     {
-        cudaError_t stat;
-        stat = cudaProfilerStart();
-        CU_RET_ERR(stat, "cudaProfilerStart failed");
+        hipError_t stat;
+        stat = hipProfilerStart();
+        CU_RET_ERR(stat, "hipProfilerStart failed");
     }
 }
 
@@ -538,9 +539,9 @@ void stopGpuProfiler(void)
        API calls from the trace, e.g. uninitialization and cleanup. */
     if (cudaProfilerRun)
     {
-        cudaError_t stat;
-        stat = cudaProfilerStop();
-        CU_RET_ERR(stat, "cudaProfilerStop failed");
+        hipError_t stat;
+        stat = hipProfilerStop();
+        CU_RET_ERR(stat, "hipProfilerStop failed");
     }
 }
 
@@ -571,37 +572,37 @@ int gpu_info_get_stat(const gmx_gpu_info_t& info, int index)
  * \param[in] mdlog          Logger object
  * \param[in] cudaCallName   name of CUDA peer access call
  */
-static void peerAccessCheckStat(const cudaError_t    stat,
+static void peerAccessCheckStat(const hipError_t    stat,
                                 const int            gpuA,
                                 const int            gpuB,
                                 const gmx::MDLogger& mdlog,
                                 const char*          cudaCallName)
 {
-    if ((stat == cudaErrorInvalidDevice) || (stat == cudaErrorInvalidValue))
+    if ((stat == hipErrorInvalidDevice) || (stat == hipErrorInvalidValue))
     {
         std::string errorString =
                 gmx::formatString("%s from GPU %d to GPU %d failed", cudaCallName, gpuA, gpuB);
         CU_RET_ERR(stat, errorString.c_str());
     }
-    if (stat != cudaSuccess)
+    if (stat != hipSuccess)
     {
         GMX_LOG(mdlog.warning)
                 .asParagraph()
                 .appendTextFormatted(
                         "GPU peer access not enabled between GPUs %d and %d due to unexpected "
                         "return value from %s: %s",
-                        gpuA, gpuB, cudaCallName, cudaGetErrorString(stat));
+                        gpuA, gpuB, cudaCallName, hipGetErrorString(stat));
     }
 }
 
 void setupGpuDevicePeerAccess(const std::vector<int>& gpuIdsToUse, const gmx::MDLogger& mdlog)
 {
-    cudaError_t stat;
+    hipError_t stat;
 
     // take a note of currently-set GPU
     int currentGpu;
-    stat = cudaGetDevice(&currentGpu);
-    CU_RET_ERR(stat, "cudaGetDevice in setupGpuDevicePeerAccess failed");
+    stat = hipGetDevice(&currentGpu);
+    CU_RET_ERR(stat, "hipGetDevice in setupGpuDevicePeerAccess failed");
 
     std::string message = gmx::formatString(
             "Note: Peer access enabled between the following GPU pairs in the node:\n ");
@@ -610,15 +611,15 @@ void setupGpuDevicePeerAccess(const std::vector<int>& gpuIdsToUse, const gmx::MD
     for (unsigned int i = 0; i < gpuIdsToUse.size(); i++)
     {
         int gpuA = gpuIdsToUse[i];
-        stat     = cudaSetDevice(gpuA);
-        if (stat != cudaSuccess)
+        stat     = hipSetDevice(gpuA);
+        if (stat != hipSuccess)
         {
             GMX_LOG(mdlog.warning)
                     .asParagraph()
                     .appendTextFormatted(
                             "GPU peer access not enabled due to unexpected return value from "
-                            "cudaSetDevice(%d): %s",
-                            gpuA, cudaGetErrorString(stat));
+                            "hipSetDevice(%d): %s",
+                            gpuA, hipGetErrorString(stat));
             return;
         }
         for (unsigned int j = 0; j < gpuIdsToUse.size(); j++)
@@ -627,13 +628,13 @@ void setupGpuDevicePeerAccess(const std::vector<int>& gpuIdsToUse, const gmx::MD
             {
                 int gpuB          = gpuIdsToUse[j];
                 int canAccessPeer = 0;
-                stat              = cudaDeviceCanAccessPeer(&canAccessPeer, gpuA, gpuB);
-                peerAccessCheckStat(stat, gpuA, gpuB, mdlog, "cudaDeviceCanAccessPeer");
+                stat              = hipDeviceCanAccessPeer(&canAccessPeer, gpuA, gpuB);
+                peerAccessCheckStat(stat, gpuA, gpuB, mdlog, "hipDeviceCanAccessPeer");
 
                 if (canAccessPeer)
                 {
-                    stat = cudaDeviceEnablePeerAccess(gpuB, 0);
-                    peerAccessCheckStat(stat, gpuA, gpuB, mdlog, "cudaDeviceEnablePeerAccess");
+                    stat = hipDeviceEnablePeerAccess(gpuB, 0);
+                    peerAccessCheckStat(stat, gpuA, gpuB, mdlog, "hipDeviceEnablePeerAccess");
 
                     message           = gmx::formatString("%s%d->%d ", message.c_str(), gpuA, gpuB);
                     peerAccessEnabled = true;
@@ -643,10 +644,10 @@ void setupGpuDevicePeerAccess(const std::vector<int>& gpuIdsToUse, const gmx::MD
     }
 
     // re-set GPU to that originally set
-    stat = cudaSetDevice(currentGpu);
-    if (stat != cudaSuccess)
+    stat = hipSetDevice(currentGpu);
+    if (stat != hipSuccess)
     {
-        CU_RET_ERR(stat, "cudaSetDevice in setupGpuDevicePeerAccess failed");
+        CU_RET_ERR(stat, "hipSetDevice in setupGpuDevicePeerAccess failed");
         return;
     }
 

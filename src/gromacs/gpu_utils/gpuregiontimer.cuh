@@ -57,19 +57,19 @@
 class GpuRegionTimerImpl
 {
     //! The underlying timing event pair - the beginning and the end of the timespan
-    cudaEvent_t eventStart_, eventStop_;
+    hipEvent_t eventStart_, eventStop_;
 
 public:
     GpuRegionTimerImpl()
     {
-        const int eventFlags = cudaEventDefault;
-        CU_RET_ERR(cudaEventCreate(&eventStart_, eventFlags), "GPU timing creation failure");
-        CU_RET_ERR(cudaEventCreate(&eventStop_, eventFlags), "GPU timing creation failure");
+        const int eventFlags = hipEventDefault;
+        CU_RET_ERR(hipEventCreate(&eventStart_, eventFlags), "GPU timing creation failure");
+        CU_RET_ERR(hipEventCreate(&eventStop_, eventFlags), "GPU timing creation failure");
     }
     ~GpuRegionTimerImpl()
     {
-        CU_RET_ERR(cudaEventDestroy(eventStart_), "GPU timing destruction failure");
-        CU_RET_ERR(cudaEventDestroy(eventStop_), "GPU timing destruction failure");
+        CU_RET_ERR(hipEventDestroy(eventStart_), "GPU timing destruction failure");
+        CU_RET_ERR(hipEventDestroy(eventStop_), "GPU timing destruction failure");
     }
     //! No copying
     GpuRegionTimerImpl(const GpuRegionTimerImpl&) = delete;
@@ -81,20 +81,20 @@ public:
     /*! \brief Will be called before the region start. */
     inline void openTimingRegion(CommandStream s)
     {
-        CU_RET_ERR(cudaEventRecord(eventStart_, s), "GPU timing recording failure");
+        CU_RET_ERR(hipEventRecord(eventStart_, s), "GPU timing recording failure");
     }
 
     /*! \brief Will be called after the region end. */
     inline void closeTimingRegion(CommandStream s)
     {
-        CU_RET_ERR(cudaEventRecord(eventStop_, s), "GPU timing recording failure");
+        CU_RET_ERR(hipEventRecord(eventStop_, s), "GPU timing recording failure");
     }
 
     /*! \brief Returns the last measured region timespan (in milliseconds) and calls reset() */
     inline double getLastRangeTime()
     {
         float milliseconds = 0.0;
-        CU_RET_ERR(cudaEventElapsedTime(&milliseconds, eventStart_, eventStop_),
+        CU_RET_ERR(hipEventElapsedTime(&milliseconds, eventStart_, eventStop_),
                    "GPU timing update failure");
         reset();
         return milliseconds;

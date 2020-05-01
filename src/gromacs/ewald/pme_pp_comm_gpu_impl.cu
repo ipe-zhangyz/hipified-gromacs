@@ -60,7 +60,7 @@ PmePpCommGpu::Impl::Impl(MPI_Comm comm, int pmeRank) : comm_(comm), pmeRank_(pme
     GMX_RELEASE_ASSERT(
             GMX_THREAD_MPI,
             "PME-PP GPU Communication is currently only supported with thread-MPI enabled");
-    cudaStreamCreate(&pmePpCommStream_);
+    hipStreamCreate(&pmePpCommStream_);
 }
 
 PmePpCommGpu::Impl::~Impl() = default;
@@ -93,9 +93,9 @@ void PmePpCommGpu::Impl::receiveForceFromPmeCudaDirect(void* recvPtr, int recvSi
 
     // Pull force data from remote GPU
     void*       pmeForcePtr = receivePmeForceToGpu ? static_cast<void*>(d_pmeForces_) : recvPtr;
-    cudaError_t stat = cudaMemcpyAsync(pmeForcePtr, remotePmeFBuffer_, recvSize * DIM * sizeof(float),
-                                       cudaMemcpyDefault, pmePpCommStream_);
-    CU_RET_ERR(stat, "cudaMemcpyAsync on Recv from PME CUDA direct data transfer failed");
+    hipError_t stat = hipMemcpyAsync(pmeForcePtr, remotePmeFBuffer_, recvSize * DIM * sizeof(float),
+                                       hipMemcpyDefault, pmePpCommStream_);
+    CU_RET_ERR(stat, "hipMemcpyAsync on Recv from PME CUDA direct data transfer failed");
 
     if (receivePmeForceToGpu)
     {
@@ -108,7 +108,7 @@ void PmePpCommGpu::Impl::receiveForceFromPmeCudaDirect(void* recvPtr, int recvSi
     {
         // Ensure CPU waits for PME forces to be copied before reducing
         // them with other forces on the CPU
-        cudaStreamSynchronize(pmePpCommStream_);
+        hipStreamSynchronize(pmePpCommStream_);
     }
 #else
     GMX_UNUSED_VALUE(recvPtr);
@@ -126,9 +126,9 @@ void PmePpCommGpu::Impl::sendCoordinatesToPmeCudaDirect(void* sendPtr,
     // ensure stream waits until coordinate data is available on device
     coordinatesReadyOnDeviceEvent->enqueueWaitEvent(pmePpCommStream_);
 
-    cudaError_t stat = cudaMemcpyAsync(remotePmeXBuffer_, sendPtr, sendSize * DIM * sizeof(float),
-                                       cudaMemcpyDefault, pmePpCommStream_);
-    CU_RET_ERR(stat, "cudaMemcpyAsync on Send to PME CUDA direct data transfer failed");
+    hipError_t stat = hipMemcpyAsync(remotePmeXBuffer_, sendPtr, sendSize * DIM * sizeof(float),
+                                       hipMemcpyDefault, pmePpCommStream_);
+    CU_RET_ERR(stat, "hipMemcpyAsync on Send to PME CUDA direct data transfer failed");
 
     // Record and send event to allow PME task to sync to above transfer before commencing force calculations
     pmeCoordinatesSynchronizer_.markEvent(pmePpCommStream_);

@@ -1,3 +1,4 @@
+#include "hip/hip_runtime.h"
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
@@ -123,7 +124,7 @@ __launch_bounds__(c_maxThreadsPerBlock) __global__
 
     constexpr float almost_zero = real(1e-12);
 
-    extern __shared__ float sm_threadVirial[];
+    HIP_DYNAMIC_SHARED( float, sm_threadVirial)
 
     int tid = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
 

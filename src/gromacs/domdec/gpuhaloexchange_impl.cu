@@ -1,3 +1,4 @@
+#include "hip/hip_runtime.h"
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
@@ -132,7 +133,7 @@ void GpuHaloExchange::Impl::reinitHalo(float3* d_coordinatesBuffer, float3* d_fo
     d_x_ = d_coordinatesBuffer;
     d_f_ = d_forcesBuffer;
 
-    cudaStream_t                 stream  = nonLocalStream_;
+    hipStream_t                 stream  = nonLocalStream_;
     int                          nzone   = 1;
     const gmx_domdec_comm_t&     comm    = *dd_->comm;
     const gmx_domdec_comm_dim_t& cd      = comm.cd[0];
@@ -254,7 +255,7 @@ void GpuHaloExchange::Impl::communicateHaloForces(bool accumulateForces)
     if (!accumulateForces)
     {
         // Clear local portion of force array (in local stream)
-        cudaMemsetAsync(d_f, 0, numHomeAtoms_ * sizeof(rvec), localStream_);
+        hipMemsetAsync(d_f, 0, numHomeAtoms_ * sizeof(rvec), localStream_);
     }
 
     // ensure non-local stream waits for local stream, due to dependence on
@@ -345,8 +346,8 @@ void GpuHaloExchange::Impl::communicateHaloDataWithCudaDirect(void* sendPtr,
                                                               int   recvRank)
 {
 
-    cudaError_t  stat;
-    cudaStream_t stream = nonLocalStream_;
+    hipError_t  stat;
+    hipStream_t stream = nonLocalStream_;
 
     // We asynchronously push data to remote rank. The remote
     // destination pointer has already been set in the init fn.  We
@@ -357,9 +358,9 @@ void GpuHaloExchange::Impl::communicateHaloDataWithCudaDirect(void* sendPtr,
     // send data to neighbor, if any data exists to send
     if (sendSize > 0)
     {
-        stat = cudaMemcpyAsync(remotePtr, sendPtr, sendSize * DIM * sizeof(float),
-                               cudaMemcpyDeviceToDevice, stream);
-        CU_RET_ERR(stat, "cudaMemcpyAsync on GPU Domdec CUDA direct data transfer failed");
+        stat = hipMemcpyAsync(remotePtr, sendPtr, sendSize * DIM * sizeof(float),
+                               hipMemcpyDeviceToDevice, stream);
+        CU_RET_ERR(stat, "hipMemcpyAsync on GPU Domdec CUDA direct data transfer failed");
     }
 
 #if GMX_MPI
@@ -397,8 +398,8 @@ GpuHaloExchange::Impl::Impl(gmx_domdec_t* dd, MPI_Comm mpi_comm_mysim, void* loc
     usePBC_(dd->ci[dd->dim[0]] == 0),
     haloDataTransferLaunched_(new GpuEventSynchronizer()),
     mpi_comm_mysim_(mpi_comm_mysim),
-    localStream_(*static_cast<cudaStream_t*>(localStream)),
-    nonLocalStream_(*static_cast<cudaStream_t*>(nonLocalStream))
+    localStream_(*static_cast<hipStream_t*>(localStream)),
+    nonLocalStream_(*static_cast<hipStream_t*>(nonLocalStream))
 {
 
     GMX_RELEASE_ASSERT(GMX_THREAD_MPI,

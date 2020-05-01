@@ -1,3 +1,4 @@
+#include "hip/hip_runtime.h"
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
@@ -135,7 +136,7 @@ __launch_bounds__(c_maxThreadsPerBlock) __global__
 
     // Vectors connecting constrained atoms before algorithm was applied.
     // Needed to construct constrain matrix A
-    extern __shared__ float3 sm_r[];
+    HIP_DYNAMIC_SHARED( float3, sm_r)
 
     int2 pair = gm_constraints[threadIndex];
     int  i    = pair.x;
@@ -221,7 +222,7 @@ __launch_bounds__(c_maxThreadsPerBlock) __global__
      */
 
     // This will use the same memory space as sm_r, which is no longer needed.
-    extern __shared__ float sm_rhs[];
+    HIP_DYNAMIC_SHARED( float, sm_rhs)
     // Save current right-hand-side vector in the shared memory
     sm_rhs[threadIdx.x] = sol;
 
@@ -354,7 +355,7 @@ __launch_bounds__(c_maxThreadsPerBlock) __global__
         // lagrangeScaled and rc are all set to zero for them in the beginning of the kernel.
         // The sm_threadVirial[..] will overlap with the sm_r[..] and sm_rhs[..], but the latter
         // two are no longer in use.
-        extern __shared__ float sm_threadVirial[];
+        HIP_DYNAMIC_SHARED( float, sm_threadVirial)
         float                   mult                  = targetLength * lagrangeScaled;
         sm_threadVirial[0 * blockDim.x + threadIdx.x] = mult * rc.x * rc.x;
         sm_threadVirial[1 * blockDim.x + threadIdx.x] = mult * rc.x * rc.y;

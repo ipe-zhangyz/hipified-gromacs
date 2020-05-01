@@ -65,9 +65,9 @@ namespace
  *
  * \throws InternalError  If status indicates failure, supplying
  *                        descriptive text from \c message. */
-static void throwUponFailure(cudaError_t status, const char* message)
+static void throwUponFailure(hipError_t status, const char* message)
 {
-    if (status != cudaSuccess)
+    if (status != hipSuccess)
     {
         GMX_THROW(InternalError(formatString("Failure while %s", message)));
         ;
@@ -85,29 +85,29 @@ void doDeviceTransfers(const gmx_gpu_info_t& gpuInfo, ArrayRef<const char> input
         std::copy(input.begin(), input.end(), output.begin());
         return;
     }
-    cudaError_t status;
+    hipError_t status;
 
     const auto* device = getDeviceInfo(gpuInfo, compatibleGpus[0]);
     int         oldDeviceId;
 
-    status = cudaGetDevice(&oldDeviceId);
+    status = hipGetDevice(&oldDeviceId);
     throwUponFailure(status, "getting old device id");
-    status = cudaSetDevice(device->id);
+    status = hipSetDevice(device->id);
     throwUponFailure(status, "setting device id to the first compatible GPU");
 
     void* devicePointer;
-    status = cudaMalloc(&devicePointer, input.size());
+    status = hipMalloc(&devicePointer, input.size());
     throwUponFailure(status, "creating buffer");
 
-    status = cudaMemcpy(devicePointer, input.data(), input.size(), cudaMemcpyHostToDevice);
+    status = hipMemcpy(devicePointer, input.data(), input.size(), hipMemcpyHostToDevice);
     throwUponFailure(status, "transferring host to device");
-    status = cudaMemcpy(output.data(), devicePointer, output.size(), cudaMemcpyDeviceToHost);
+    status = hipMemcpy(output.data(), devicePointer, output.size(), hipMemcpyDeviceToHost);
     throwUponFailure(status, "transferring device to host");
 
-    status = cudaFree(devicePointer);
+    status = hipFree(devicePointer);
     throwUponFailure(status, "releasing buffer");
 
-    status = cudaSetDevice(oldDeviceId);
+    status = hipSetDevice(oldDeviceId);
     throwUponFailure(status, "setting old device id");
 }
 

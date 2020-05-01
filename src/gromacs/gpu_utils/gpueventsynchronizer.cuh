@@ -62,13 +62,13 @@ class GpuEventSynchronizer
 public:
     GpuEventSynchronizer()
     {
-        cudaError_t gmx_used_in_debug stat = cudaEventCreateWithFlags(&event_, cudaEventDisableTiming);
-        GMX_RELEASE_ASSERT(stat == cudaSuccess, "cudaEventCreate failed");
+        hipError_t gmx_used_in_debug stat = hipEventCreateWithFlags(&event_, hipEventDisableTiming);
+        GMX_RELEASE_ASSERT(stat == hipSuccess, "hipEventCreate failed");
     }
     ~GpuEventSynchronizer()
     {
-        cudaError_t gmx_used_in_debug stat = cudaEventDestroy(event_);
-        GMX_ASSERT(stat == cudaSuccess, "cudaEventDestroy failed");
+        hipError_t gmx_used_in_debug stat = hipEventDestroy(event_);
+        GMX_ASSERT(stat == hipSuccess, "hipEventDestroy failed");
     }
     //! No copying
     GpuEventSynchronizer(const GpuEventSynchronizer&) = delete;
@@ -82,24 +82,24 @@ public:
      */
     inline void markEvent(CommandStream stream)
     {
-        cudaError_t gmx_used_in_debug stat = cudaEventRecord(event_, stream);
-        GMX_ASSERT(stat == cudaSuccess, "cudaEventRecord failed");
+        hipError_t gmx_used_in_debug stat = hipEventRecord(event_, stream);
+        GMX_ASSERT(stat == hipSuccess, "hipEventRecord failed");
     }
     /*! \brief Synchronizes the host thread on the marked event. */
     inline void waitForEvent()
     {
-        cudaError_t gmx_used_in_debug stat = cudaEventSynchronize(event_);
-        GMX_ASSERT(stat == cudaSuccess, "cudaEventSynchronize failed");
+        hipError_t gmx_used_in_debug stat = hipEventSynchronize(event_);
+        GMX_ASSERT(stat == hipSuccess, "hipEventSynchronize failed");
     }
     /*! \brief Enqueues a wait for the recorded event in stream \p stream */
     inline void enqueueWaitEvent(CommandStream stream)
     {
-        cudaError_t gmx_used_in_debug stat = cudaStreamWaitEvent(stream, event_, 0);
-        GMX_ASSERT(stat == cudaSuccess, "cudaStreamWaitEvent failed");
+        hipError_t gmx_used_in_debug stat = hipStreamWaitEvent(stream, event_, 0);
+        GMX_ASSERT(stat == hipSuccess, "hipStreamWaitEvent failed");
     }
 
 private:
-    cudaEvent_t event_;
+    hipEvent_t event_;
 };
 
 #endif

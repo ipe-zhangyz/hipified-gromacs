@@ -1,3 +1,4 @@
+#include "hip/hip_runtime.h"
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
@@ -254,7 +255,7 @@ __launch_bounds__(THREADS_PER_BLOCK)
      * sm_nextSlotPtr should always be updated to point to the "next slot",
      * that is past the last point where data has been stored.
      */
-    extern __shared__ char sm_dynamicShmem[];
+    HIP_DYNAMIC_SHARED( char, sm_dynamicShmem)
     char*                  sm_nextSlotPtr = sm_dynamicShmem;
     static_assert(sizeof(char) == 1,
                   "The shared memory offset calculation assumes that char is 1 byte");

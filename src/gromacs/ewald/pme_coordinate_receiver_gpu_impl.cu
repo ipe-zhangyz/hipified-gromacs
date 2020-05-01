@@ -59,7 +59,7 @@ namespace gmx
 {
 
 PmeCoordinateReceiverGpu::Impl::Impl(void* pmeStream, MPI_Comm comm, gmx::ArrayRef<PpRanks> ppRanks) :
-    pmeStream_(*static_cast<cudaStream_t*>(pmeStream)),
+    pmeStream_(*static_cast<hipStream_t*>(pmeStream)),
     comm_(comm),
     ppRanks_(ppRanks)
 {

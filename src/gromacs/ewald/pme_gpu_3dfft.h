@@ -48,7 +48,7 @@
 #include <vector>
 
 #if GMX_GPU == GMX_GPU_CUDA
-#    include <cufft.h>
+#    include <hipfft.h>
 
 #    include "gromacs/gpu_utils/gputraits.cuh"
 #elif GMX_GPU == GMX_GPU_OPENCL
@@ -86,10 +86,10 @@ public:
 
 private:
 #if GMX_GPU == GMX_GPU_CUDA
-    cufftHandle   planR2C_;
-    cufftHandle   planC2R_;
-    cufftReal*    realGrid_;
-    cufftComplex* complexGrid_;
+    hipfftHandle   planR2C_;
+    hipfftHandle   planC2R_;
+    hipfftReal*    realGrid_;
+    hipfftComplex* complexGrid_;
 #elif GMX_GPU == GMX_GPU_OPENCL
     clfftPlanHandle               planR2C_;
     clfftPlanHandle               planC2R_;

@@ -109,8 +109,8 @@ StatePropagatorDataGpu::Impl::Impl(const void*        pmeStream,
 
         // TODO: The update stream should be created only when it is needed.
 #    if (GMX_GPU == GMX_GPU_CUDA)
-        cudaError_t stat;
-        stat = cudaStreamCreate(&updateStream_);
+        hipError_t stat;
+        stat = hipStreamCreate(&updateStream_);
         CU_RET_ERR(stat, "CUDA stream creation failed in StatePropagatorDataGpu");
 #    endif
         GMX_UNUSED_VALUE(deviceContext);

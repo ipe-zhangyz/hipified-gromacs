@@ -175,9 +175,9 @@ private:
     //! MPI communicator used for simulation
     MPI_Comm mpi_comm_mysim_;
     //! CUDA stream for local non-bonded calculations
-    cudaStream_t localStream_ = nullptr;
+    hipStream_t localStream_ = nullptr;
     //! CUDA stream for non-local non-bonded calculations
-    cudaStream_t nonLocalStream_ = nullptr;
+    hipStream_t nonLocalStream_ = nullptr;
     //! full coordinates buffer in GPU memory
     float3* d_x_ = nullptr;
     //! full forces buffer in GPU memory

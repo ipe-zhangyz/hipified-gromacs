@@ -47,9 +47,9 @@
 /*** Generic CUDA data operation wrappers ***/
 
 // TODO: template on transferKind to avoid runtime conditionals
-int cu_copy_D2H(void* h_dest, void* d_src, size_t bytes, GpuApiCallBehavior transferKind, cudaStream_t s = nullptr)
+int cu_copy_D2H(void* h_dest, void* d_src, size_t bytes, GpuApiCallBehavior transferKind, hipStream_t s = nullptr)
 {
-    cudaError_t stat;
+    hipError_t stat;
 
     if (h_dest == nullptr || d_src == nullptr || bytes == 0)
     {
@@ -60,13 +60,13 @@ int cu_copy_D2H(void* h_dest, void* d_src, size_t bytes, GpuApiCallBehavior tran
     {
         case GpuApiCallBehavior::Async:
             GMX_ASSERT(isHostMemoryPinned(h_dest), "Destination buffer was not pinned for CUDA");
-            stat = cudaMemcpyAsync(h_dest, d_src, bytes, cudaMemcpyDeviceToHost, s);
-            CU_RET_ERR(stat, "DtoH cudaMemcpyAsync failed");
+            stat = hipMemcpyAsync(h_dest, d_src, bytes, hipMemcpyDeviceToHost, s);
+            CU_RET_ERR(stat, "DtoH hipMemcpyAsync failed");
             break;
 
         case GpuApiCallBehavior::Sync:
-            stat = cudaMemcpy(h_dest, d_src, bytes, cudaMemcpyDeviceToHost);
-            CU_RET_ERR(stat, "DtoH cudaMemcpy failed");
+            stat = hipMemcpy(h_dest, d_src, bytes, hipMemcpyDeviceToHost);
+            CU_RET_ERR(stat, "DtoH hipMemcpy failed");
             break;
 
         default: throw;
@@ -83,15 +83,15 @@ int cu_copy_D2H_sync(void* h_dest, void* d_src, size_t bytes)
 /*!
  *  The copy is launched in stream s or if not specified, in stream 0.
  */
-int cu_copy_D2H_async(void* h_dest, void* d_src, size_t bytes, cudaStream_t s = nullptr)
+int cu_copy_D2H_async(void* h_dest, void* d_src, size_t bytes, hipStream_t s = nullptr)
 {
     return cu_copy_D2H(h_dest, d_src, bytes, GpuApiCallBehavior::Async, s);
 }
 
 // TODO: template on transferKind to avoid runtime conditionals
-int cu_copy_H2D(void* d_dest, const void* h_src, size_t bytes, GpuApiCallBehavior transferKind, cudaStream_t s = nullptr)
+int cu_copy_H2D(void* d_dest, const void* h_src, size_t bytes, GpuApiCallBehavior transferKind, hipStream_t s = nullptr)
 {
-    cudaError_t stat;
+    hipError_t stat;
 
     if (d_dest == nullptr || h_src == nullptr || bytes == 0)
     {
@@ -102,13 +102,13 @@ int cu_copy_H2D(void* d_dest, const void* h_src, size_t bytes, GpuApiCallBehavio
     {
         case GpuApiCallBehavior::Async:
             GMX_ASSERT(isHostMemoryPinned(h_src), "Source buffer was not pinned for CUDA");
-            stat = cudaMemcpyAsync(d_dest, h_src, bytes, cudaMemcpyHostToDevice, s);
-            CU_RET_ERR(stat, "HtoD cudaMemcpyAsync failed");
+            stat = hipMemcpyAsync(d_dest, h_src, bytes, hipMemcpyHostToDevice, s);
+            CU_RET_ERR(stat, "HtoD hipMemcpyAsync failed");
             break;
 
         case GpuApiCallBehavior::Sync:
-            stat = cudaMemcpy(d_dest, h_src, bytes, cudaMemcpyHostToDevice);
-            CU_RET_ERR(stat, "HtoD cudaMemcpy failed");
+            stat = hipMemcpy(d_dest, h_src, bytes, hipMemcpyHostToDevice);
+            CU_RET_ERR(stat, "HtoD hipMemcpy failed");
             break;
 
         default: throw;
@@ -125,7 +125,7 @@ int cu_copy_H2D_sync(void* d_dest, const void* h_src, size_t bytes)
 /*!
  *  The copy is launched in stream s or if not specified, in stream 0.
  */
-int cu_copy_H2D_async(void* d_dest, const void* h_src, size_t bytes, cudaStream_t s = nullptr)
+int cu_copy_H2D_async(void* d_dest, const void* h_src, size_t bytes, hipStream_t s = nullptr)
 {
     return cu_copy_H2D(d_dest, h_src, bytes, GpuApiCallBehavior::Async, s);
 }
@@ -141,32 +141,32 @@ int cu_copy_H2D_async(void* d_dest, const void* h_src, size_t bytes, cudaStream_
  * \param[in]  sizeInBytes  size of memory area to bind \p texObj to
  */
 template<typename T>
-static void setup1DTexture(cudaTextureObject_t& texObj, void* d_ptr, size_t sizeInBytes)
+static void setup1DTexture(hipTextureObject_t& texObj, void* d_ptr, size_t sizeInBytes)
 {
     assert(!c_disableCudaTextures);
 
-    cudaError_t      stat;
-    cudaResourceDesc rd;
-    cudaTextureDesc  td;
+    hipError_t      stat;
+    hipResourceDesc rd;
+    hipTextureDesc  td;
 
     memset(&rd, 0, sizeof(rd));
-    rd.resType                = cudaResourceTypeLinear;
+    rd.resType                = hipResourceTypeLinear;
     rd.res.linear.devPtr      = d_ptr;
-    rd.res.linear.desc        = cudaCreateChannelDesc<T>();
+    rd.res.linear.desc        = hipCreateChannelDesc<T>();
     rd.res.linear.sizeInBytes = sizeInBytes;
 
     memset(&td, 0, sizeof(td));
-    td.readMode = cudaReadModeElementType;
-    stat        = cudaCreateTextureObject(&texObj, &rd, &td, nullptr);
-    CU_RET_ERR(stat, "cudaCreateTextureObject failed");
+    td.readMode = hipReadModeElementType;
+    stat        = hipCreateTextureObject(&texObj, &rd, &td, nullptr);
+    CU_RET_ERR(stat, "hipCreateTextureObject failed");
 }
 
 template<typename T>
-void initParamLookupTable(T*& d_ptr, cudaTextureObject_t& texObj, const T* h_ptr, int numElem)
+void initParamLookupTable(T*& d_ptr, hipTextureObject_t& texObj, const T* h_ptr, int numElem)
 {
     const size_t sizeInBytes = numElem * sizeof(*d_ptr);
-    cudaError_t  stat        = cudaMalloc((void**)&d_ptr, sizeInBytes);
-    CU_RET_ERR(stat, "cudaMalloc failed in initParamLookupTable");
+    hipError_t  stat        = hipMalloc((void**)&d_ptr, sizeInBytes);
+    CU_RET_ERR(stat, "hipMalloc failed in initParamLookupTable");
     cu_copy_H2D_sync(d_ptr, (void*)h_ptr, sizeInBytes);
 
     if (!c_disableCudaTextures)
@@ -176,20 +176,20 @@ void initParamLookupTable(T*& d_ptr, cudaTextureObject_t& texObj, const T* h_ptr
 }
 
 template<typename T>
-void destroyParamLookupTable(T* d_ptr, cudaTextureObject_t texObj)
+void destroyParamLookupTable(T* d_ptr, hipTextureObject_t texObj)
 {
     if (!c_disableCudaTextures && texObj)
     {
-        CU_RET_ERR(cudaDestroyTextureObject(texObj), "cudaDestroyTextureObject on texObj failed");
+        CU_RET_ERR(hipDestroyTextureObject(texObj), "hipDestroyTextureObject on texObj failed");
     }
-    CU_RET_ERR(cudaFree(d_ptr), "cudaFree failed");
+    CU_RET_ERR(hipFree(d_ptr), "hipFree failed");
 }
 
 /*! \brief Add explicit instantiations of init/destroyParamLookupTable() here as needed.
- * One should also verify that the result of cudaCreateChannelDesc<T>() during texture setup
+ * One should also verify that the result of hipCreateChannelDesc<T>() during texture setup
  * looks reasonable, when instantiating the templates for new types - just in case.
  */
-template void initParamLookupTable<float>(float*&, cudaTextureObject_t&, const float*, int);
-template void destroyParamLookupTable<float>(float*, cudaTextureObject_t);
-template void initParamLookupTable<int>(int*&, cudaTextureObject_t&, const int*, int);
-template void destroyParamLookupTable<int>(int*, cudaTextureObject_t);
+template void initParamLookupTable<float>(float*&, hipTextureObject_t&, const float*, int);
+template void destroyParamLookupTable<float>(float*, hipTextureObject_t);
+template void initParamLookupTable<int>(int*&, hipTextureObject_t&, const int*, int);
+template void destroyParamLookupTable<int>(int*, hipTextureObject_t);

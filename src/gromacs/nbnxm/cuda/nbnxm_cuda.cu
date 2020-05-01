@@ -364,7 +364,7 @@ static inline int calc_shmem_required_nonbonded(const int               num_thre
  */
 void nbnxnInsertNonlocalGpuDependency(const gmx_nbnxn_cuda_t* nb, const InteractionLocality interactionLocality)
 {
-    cudaStream_t stream = nb->stream[interactionLocality];
+    hipStream_t stream = nb->stream[interactionLocality];
 
     /* When we get here all misc operations issued in the local stream as well as
        the local xq H2D are done,
@@ -376,13 +376,13 @@ void nbnxnInsertNonlocalGpuDependency(const gmx_nbnxn_cuda_t* nb, const Interact
     {
         if (interactionLocality == InteractionLocality::Local)
         {
-            cudaError_t stat = cudaEventRecord(nb->misc_ops_and_local_H2D_done, stream);
-            CU_RET_ERR(stat, "cudaEventRecord on misc_ops_and_local_H2D_done failed");
+            hipError_t stat = hipEventRecord(nb->misc_ops_and_local_H2D_done, stream);
+            CU_RET_ERR(stat, "hipEventRecord on misc_ops_and_local_H2D_done failed");
         }
         else
         {
-            cudaError_t stat = cudaStreamWaitEvent(stream, nb->misc_ops_and_local_H2D_done, 0);
-            CU_RET_ERR(stat, "cudaStreamWaitEvent on misc_ops_and_local_H2D_done failed");
+            hipError_t stat = hipStreamWaitEvent(stream, nb->misc_ops_and_local_H2D_done, 0);
+            CU_RET_ERR(stat, "hipStreamWaitEvent on misc_ops_and_local_H2D_done failed");
         }
     }
 }
@@ -402,7 +402,7 @@ void gpu_copy_xq_to_gpu(gmx_nbnxn_cuda_t* nb, const nbnxn_atomdata_t* nbatom, co
     cu_atomdata_t* adat   = nb->atdat;
     cu_plist_t*    plist  = nb->plist[iloc];
     cu_timers_t*   t      = nb->timers;
-    cudaStream_t   stream = nb->stream[iloc];
+    hipStream_t   stream = nb->stream[iloc];
 
     bool bDoTime = nb->bDoTime;
 
@@ -482,7 +482,7 @@ void gpu_launch_kernel(gmx_nbnxn_cuda_t* nb, const gmx::StepWorkload& stepWork, 
     cu_nbparam_t*  nbp    = nb->nbparam;
     cu_plist_t*    plist  = nb->plist[iloc];
     cu_timers_t*   t      = nb->timers;
-    cudaStream_t   stream = nb->stream[iloc];
+    hipStream_t   stream = nb->stream[iloc];
 
     bool bDoTime = nb->bDoTime;
 
@@ -571,7 +571,7 @@ void gpu_launch_kernel(gmx_nbnxn_cuda_t* nb, const gmx::StepWorkload& stepWork, 
     if (GMX_NATIVE_WINDOWS)
     {
         /* Windows: force flushing WDDM queue */
-        cudaStreamQuery(stream);
+        hipStreamQuery(stream);
     }
 }
 
@@ -594,7 +594,7 @@ void gpu_launch_kernel_pruneonly(gmx_nbnxn_cuda_t* nb, const InteractionLocality
     cu_nbparam_t*  nbp    = nb->nbparam;
     cu_plist_t*    plist  = nb->plist[iloc];
     cu_timers_t*   t      = nb->timers;
-    cudaStream_t   stream = nb->stream[iloc];
+    hipStream_t   stream = nb->stream[iloc];
 
     bool bDoTime = nb->bDoTime;
 
@@ -708,7 +708,7 @@ void gpu_launch_kernel_pruneonly(gmx_nbnxn_cuda_t* nb, const InteractionLocality
     if (GMX_NATIVE_WINDOWS)
     {
         /* Windows: force flushing WDDM queue */
-        cudaStreamQuery(stream);
+        hipStreamQuery(stream);
     }
 }
 
@@ -719,7 +719,7 @@ void gpu_launch_cpyback(gmx_nbnxn_cuda_t*        nb,
 {
     GMX_ASSERT(nb, "Need a valid nbnxn_gpu object");
 
-    cudaError_t stat;
+    hipError_t stat;
     int         adat_begin, adat_len; /* local/nonlocal offset and length used for xq and f */
 
     /* determine interaction locality from atom locality */
@@ -729,7 +729,7 @@ void gpu_launch_cpyback(gmx_nbnxn_cuda_t*        nb,
     cu_atomdata_t* adat    = nb->atdat;
     cu_timers_t*   t       = nb->timers;
     bool           bDoTime = nb->bDoTime;
-    cudaStream_t   stream  = nb->stream[iloc];
+    hipStream_t   stream  = nb->stream[iloc];
 
     /* don't launch non-local copy-back if there was no non-local work to do */
     if ((iloc == InteractionLocality::NonLocal) && !haveGpuShortRangeWork(*nb, iloc))
@@ -749,8 +749,8 @@ void gpu_launch_cpyback(gmx_nbnxn_cuda_t*        nb,
        kernel has finished. */
     if (iloc == InteractionLocality::Local && nb->bUseTwoStreams)
     {
-        stat = cudaStreamWaitEvent(stream, nb->nonlocal_done, 0);
-        CU_RET_ERR(stat, "cudaStreamWaitEvent on nonlocal_done failed");
+        stat = hipStreamWaitEvent(stream, nb->nonlocal_done, 0);
+        CU_RET_ERR(stat, "hipStreamWaitEvent on nonlocal_done failed");
     }
 
     /* DtoH f
@@ -768,8 +768,8 @@ void gpu_launch_cpyback(gmx_nbnxn_cuda_t*        nb,
        back first. */
     if (iloc == InteractionLocality::NonLocal)
     {
-        stat = cudaEventRecord(nb->nonlocal_done, stream);
-        CU_RET_ERR(stat, "cudaEventRecord on nonlocal_done failed");
+        stat = hipEventRecord(nb->nonlocal_done, stream);
+        CU_RET_ERR(stat, "hipEventRecord on nonlocal_done failed");
     }
 
     /* only transfer energies in the local stream */
@@ -797,18 +797,18 @@ void gpu_launch_cpyback(gmx_nbnxn_cuda_t*        nb,
 
 void cuda_set_cacheconfig()
 {
-    cudaError_t stat;
+    hipError_t stat;
 
     for (int i = 0; i < eelCuNR; i++)
     {
         for (int j = 0; j < evdwCuNR; j++)
         {
             /* Default kernel 32/32 kB Shared/L1 */
-            cudaFuncSetCacheConfig(nb_kfunc_ener_prune_ptr[i][j], cudaFuncCachePreferEqual);
-            cudaFuncSetCacheConfig(nb_kfunc_ener_noprune_ptr[i][j], cudaFuncCachePreferEqual);
-            cudaFuncSetCacheConfig(nb_kfunc_noener_prune_ptr[i][j], cudaFuncCachePreferEqual);
-            stat = cudaFuncSetCacheConfig(nb_kfunc_noener_noprune_ptr[i][j], cudaFuncCachePreferEqual);
-            CU_RET_ERR(stat, "cudaFuncSetCacheConfig failed");
+            hipFuncSetCacheConfig(reinterpret_cast<const void*>(nb_kfunc_ener_prune_ptr[i][j]), hipFuncCachePreferEqual);
+            hipFuncSetCacheConfig(reinterpret_cast<const void*>(nb_kfunc_ener_noprune_ptr[i][j]), hipFuncCachePreferEqual);
+            hipFuncSetCacheConfig(reinterpret_cast<const void*>(nb_kfunc_noener_prune_ptr[i][j]), hipFuncCachePreferEqual);
+            stat = hipFuncSetCacheConfig(reinterpret_cast<const void*>(nb_kfunc_noener_noprune_ptr[i][j]), hipFuncCachePreferEqual);
+            CU_RET_ERR(stat, "hipFuncSetCacheConfig failed");
         }
     }
 }
@@ -832,7 +832,7 @@ void nbnxn_gpu_x_to_nbat_x(const Nbnxm::Grid&        grid,
     const int                  numAtomsPerCell = grid.numAtomsPerCell();
     Nbnxm::InteractionLocality interactionLoc  = gpuAtomToInteractionLocality(locality);
 
-    cudaStream_t stream = nb->stream[interactionLoc];
+    hipStream_t stream = nb->stream[interactionLoc];
 
     int numAtoms = grid.srcAtomEnd() - grid.srcAtomBegin();
     // avoid empty kernel launch, skip to inserting stream dependency
@@ -896,7 +896,7 @@ void nbnxn_gpu_add_nbat_f_to_f(const AtomLocality                         atomLo
     GMX_ASSERT(totalForcesDevice, "Need a valid totalForcesDevice pointer");
 
     const InteractionLocality iLocality = gpuAtomToInteractionLocality(atomLocality);
-    cudaStream_t              stream    = nb->stream[iLocality];
+    hipStream_t              stream    = nb->stream[iLocality];
     cu_atomdata_t*            adat      = nb->atdat;
 
     size_t gmx_used_in_debug numDependency = static_cast<size_t>((useGpuFPmeReduction == true))

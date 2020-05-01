@@ -506,7 +506,7 @@ void pme_gpu_init_internal(PmeGpu* pmeGpu)
 #if GMX_GPU == GMX_GPU_CUDA
     // Prepare to use the device that this PME task was assigned earlier.
     // Other entities, such as CUDA timing events, are known to implicitly use the device context.
-    CU_RET_ERR(cudaSetDevice(pmeGpu->deviceInfo->id), "Switching to PME CUDA device");
+    CU_RET_ERR(hipSetDevice(pmeGpu->deviceInfo->id), "Switching to PME CUDA device");
 #endif
 
     /* Allocate the target-specific structures */
@@ -548,14 +548,14 @@ void pme_gpu_init_internal(PmeGpu* pmeGpu)
      * - no priorities implemented yet with OpenCL; see #2532
      */
 #if GMX_GPU == GMX_GPU_CUDA
-    cudaError_t stat;
+    hipError_t stat;
     int         highest_priority, lowest_priority;
-    stat = cudaDeviceGetStreamPriorityRange(&lowest_priority, &highest_priority);
-    CU_RET_ERR(stat, "PME cudaDeviceGetStreamPriorityRange failed");
-    stat = cudaStreamCreateWithPriority(&pmeGpu->archSpecific->pmeStream,
-                                        cudaStreamDefault, // cudaStreamNonBlocking,
+    stat = hipDeviceGetStreamPriorityRange(&lowest_priority, &highest_priority);
+    CU_RET_ERR(stat, "PME hipDeviceGetStreamPriorityRange failed");
+    stat = hipStreamCreateWithPriority(&pmeGpu->archSpecific->pmeStream,
+                                        hipStreamDefault, // hipStreamNonBlocking,
                                         highest_priority);
-    CU_RET_ERR(stat, "cudaStreamCreateWithPriority on the PME stream failed");
+    CU_RET_ERR(stat, "hipStreamCreateWithPriority on the PME stream failed");
 #elif GMX_GPU == GMX_GPU_OPENCL
     cl_command_queue_properties queueProperties =
             pmeGpu->archSpecific->useTiming ? CL_QUEUE_PROFILING_ENABLE : 0;
@@ -574,8 +574,8 @@ void pme_gpu_destroy_specific(const PmeGpu* pmeGpu)
 {
 #if GMX_GPU == GMX_GPU_CUDA
     /* Destroy the CUDA stream */
-    cudaError_t stat = cudaStreamDestroy(pmeGpu->archSpecific->pmeStream);
-    CU_RET_ERR(stat, "PME cudaStreamDestroy error");
+    hipError_t stat = hipStreamDestroy(pmeGpu->archSpecific->pmeStream);
+    CU_RET_ERR(stat, "PME hipStreamDestroy error");
 #elif GMX_GPU == GMX_GPU_OPENCL
     cl_int clError = clReleaseCommandQueue(pmeGpu->archSpecific->pmeStream);
     if (clError != CL_SUCCESS)
@@ -1197,9 +1197,9 @@ void pme_gpu_spread(const PmeGpu*         pmeGpu,
     // (e.g. on 660 Ti where 50% occupancy is ~25% faster than 100% occupancy with RNAse (~17.8k atoms))
     // If doing so, change atomsPerBlock in the kernels as well.
     // TODO: test varying block sizes on modern arch-s as well
-    // TODO: also consider using cudaFuncSetCacheConfig() for preferring shared memory on older architectures
+    // TODO: also consider using hipFuncSetCacheConfig(reinterpret_cast<const void*>() for preferring shared memory on older architectures
     //(for spline data mostly)
-    GMX_ASSERT(!c_usePadding || !(c_pmeAtomDataAlignment % atomsPerBlock),
+    GMX_ASSERT(!c_usePadding || !(c_pmeAtomDataAlignment % atomsPerBlock)),
                "inconsistent atom data padding vs. spreading block size");
 
     // Ensure that coordinates are ready on the device before launching spread;

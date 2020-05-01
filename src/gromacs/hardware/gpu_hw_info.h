@@ -45,7 +45,7 @@ struct gmx_device_info_t;
  * occurred that indicates malfunctioning of the device, driver, or
  * incompatible driver/runtime.
  * eGpuUnavailable indicates that CUDA devices are busy or unavailable
- * typically due to use of cudaComputeModeExclusive, cudaComputeModeProhibited modes.
+ * typically due to use of hipComputeModeExclusive, hipComputeModeProhibited modes.
  */
 typedef enum
 {

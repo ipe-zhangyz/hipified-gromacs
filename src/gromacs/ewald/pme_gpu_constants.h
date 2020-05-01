@@ -66,7 +66,7 @@
  * true:  The atom data GPU buffers are padded with zeroes so that the possible number of atoms
  *        fitting in is divisible by c_pmeAtomDataAlignment.
  *        The atom index checks are not performed. There should be a performance win, but how big is it, remains to be seen.
- *        Additional cudaMemsetAsync calls are done occasionally (only charges/coordinates; spline data is always recalculated now).
+ *        Additional hipMemsetAsync calls are done occasionally (only charges/coordinates; spline data is always recalculated now).
  * \todo Estimate performance differences
  */
 constexpr bool c_usePadding = true;

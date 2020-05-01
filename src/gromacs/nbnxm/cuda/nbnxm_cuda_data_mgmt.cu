@@ -126,20 +126,20 @@ static void init_ewald_coulomb_force_table(const EwaldCorrectionTables& tables, 
     pair-search. */
 static void init_atomdata_first(cu_atomdata_t* ad, int ntypes)
 {
-    cudaError_t stat;
+    hipError_t stat;
 
     ad->ntypes = ntypes;
-    stat       = cudaMalloc((void**)&ad->shift_vec, SHIFTS * sizeof(*ad->shift_vec));
-    CU_RET_ERR(stat, "cudaMalloc failed on ad->shift_vec");
+    stat       = hipMalloc((void**)&ad->shift_vec, SHIFTS * sizeof(*ad->shift_vec));
+    CU_RET_ERR(stat, "hipMalloc failed on ad->shift_vec");
     ad->bShiftVecUploaded = false;
 
-    stat = cudaMalloc((void**)&ad->fshift, SHIFTS * sizeof(*ad->fshift));
-    CU_RET_ERR(stat, "cudaMalloc failed on ad->fshift");
+    stat = hipMalloc((void**)&ad->fshift, SHIFTS * sizeof(*ad->fshift));
+    CU_RET_ERR(stat, "hipMalloc failed on ad->fshift");
 
-    stat = cudaMalloc((void**)&ad->e_lj, sizeof(*ad->e_lj));
-    CU_RET_ERR(stat, "cudaMalloc failed on ad->e_lj");
-    stat = cudaMalloc((void**)&ad->e_el, sizeof(*ad->e_el));
-    CU_RET_ERR(stat, "cudaMalloc failed on ad->e_el");
+    stat = hipMalloc((void**)&ad->e_lj, sizeof(*ad->e_lj));
+    CU_RET_ERR(stat, "hipMalloc failed on ad->e_lj");
+    stat = hipMalloc((void**)&ad->e_el, sizeof(*ad->e_el));
+    CU_RET_ERR(stat, "hipMalloc failed on ad->e_el");
 
     /* initialize to nullptr poiters to data that is not allocated here and will
        need reallocation in nbnxn_cuda_init_atomdata */
@@ -418,7 +418,7 @@ gmx_nbnxn_cuda_t* gpu_init(const gmx_device_info_t*   deviceInfo,
                            int /*rank*/,
                            gmx_bool bLocalAndNonlocal)
 {
-    cudaError_t stat;
+    hipError_t stat;
 
     gmx_nbnxn_cuda_t* nb;
     snew(nb, 1);
@@ -446,8 +446,8 @@ gmx_nbnxn_cuda_t* gpu_init(const gmx_device_info_t*   deviceInfo,
     nb->dev_info = deviceInfo;
 
     /* local/non-local GPU streams */
-    stat = cudaStreamCreate(&nb->stream[InteractionLocality::Local]);
-    CU_RET_ERR(stat, "cudaStreamCreate on stream[InterationLocality::Local] failed");
+    stat = hipStreamCreate(&nb->stream[InteractionLocality::Local]);
+    CU_RET_ERR(stat, "hipStreamCreate on stream[InterationLocality::Local] failed");
     if (nb->bUseTwoStreams)
     {
         init_plist(nb->plist[InteractionLocality::NonLocal]);
@@ -457,20 +457,20 @@ gmx_nbnxn_cuda_t* gpu_init(const gmx_device_info_t*   deviceInfo,
          * case will be a single value.
          */
         int highest_priority;
-        stat = cudaDeviceGetStreamPriorityRange(nullptr, &highest_priority);
-        CU_RET_ERR(stat, "cudaDeviceGetStreamPriorityRange failed");
+        stat = hipDeviceGetStreamPriorityRange(nullptr, &highest_priority);
+        CU_RET_ERR(stat, "hipDeviceGetStreamPriorityRange failed");
 
-        stat = cudaStreamCreateWithPriority(&nb->stream[InteractionLocality::NonLocal],
-                                            cudaStreamDefault, highest_priority);
+        stat = hipStreamCreateWithPriority(&nb->stream[InteractionLocality::NonLocal],
+                                            hipStreamDefault, highest_priority);
         CU_RET_ERR(stat,
-                   "cudaStreamCreateWithPriority on stream[InteractionLocality::NonLocal] failed");
+                   "hipStreamCreateWithPriority on stream[InteractionLocality::NonLocal] failed");
     }
 
     /* init events for sychronization (timing disabled for performance reasons!) */
-    stat = cudaEventCreateWithFlags(&nb->nonlocal_done, cudaEventDisableTiming);
-    CU_RET_ERR(stat, "cudaEventCreate on nonlocal_done failed");
-    stat = cudaEventCreateWithFlags(&nb->misc_ops_and_local_H2D_done, cudaEventDisableTiming);
-    CU_RET_ERR(stat, "cudaEventCreate on misc_ops_and_local_H2D_done failed");
+    stat = hipEventCreateWithFlags(&nb->nonlocal_done, hipEventDisableTiming);
+    CU_RET_ERR(stat, "hipEventCreate on nonlocal_done failed");
+    stat = hipEventCreateWithFlags(&nb->misc_ops_and_local_H2D_done, hipEventDisableTiming);
+    CU_RET_ERR(stat, "hipEventCreate on misc_ops_and_local_H2D_done failed");
 
     nb->xNonLocalCopyD2HDone = new GpuEventSynchronizer();
 
@@ -512,7 +512,7 @@ void gpu_init_pairlist(gmx_nbnxn_cuda_t* nb, const NbnxnPairlistGpu* h_plist, co
 {
     char         sbuf[STRLEN];
     bool         bDoTime = (nb->bDoTime && !h_plist->sci.empty());
-    cudaStream_t stream  = nb->stream[iloc];
+    hipStream_t stream  = nb->stream[iloc];
     cu_plist_t*  d_plist = nb->plist[iloc];
 
     if (d_plist->na_c < 0)
@@ -567,7 +567,7 @@ void gpu_init_pairlist(gmx_nbnxn_cuda_t* nb, const NbnxnPairlistGpu* h_plist, co
 void gpu_upload_shiftvec(gmx_nbnxn_cuda_t* nb, const nbnxn_atomdata_t* nbatom)
 {
     cu_atomdata_t* adat = nb->atdat;
-    cudaStream_t   ls   = nb->stream[InteractionLocality::Local];
+    hipStream_t   ls   = nb->stream[InteractionLocality::Local];
 
     /* only if we have a dynamic box */
     if (nbatom->bDynamicBox || !adat->bShiftVecUploaded)
@@ -580,27 +580,27 @@ void gpu_upload_shiftvec(gmx_nbnxn_cuda_t* nb, const nbnxn_atomdata_t* nbatom)
 /*! Clears the first natoms_clear elements of the GPU nonbonded force output array. */
 static void nbnxn_cuda_clear_f(gmx_nbnxn_cuda_t* nb, int natoms_clear)
 {
-    cudaError_t    stat;
+    hipError_t    stat;
     cu_atomdata_t* adat = nb->atdat;
-    cudaStream_t   ls   = nb->stream[InteractionLocality::Local];
+    hipStream_t   ls   = nb->stream[InteractionLocality::Local];
 
-    stat = cudaMemsetAsync(adat->f, 0, natoms_clear * sizeof(*adat->f), ls);
-    CU_RET_ERR(stat, "cudaMemsetAsync on f falied");
+    stat = hipMemsetAsync(adat->f, 0, natoms_clear * sizeof(*adat->f), ls);
+    CU_RET_ERR(stat, "hipMemsetAsync on f falied");
 }
 
 /*! Clears nonbonded shift force output array and energy outputs on the GPU. */
 static void nbnxn_cuda_clear_e_fshift(gmx_nbnxn_cuda_t* nb)
 {
-    cudaError_t    stat;
+    hipError_t    stat;
     cu_atomdata_t* adat = nb->atdat;
-    cudaStream_t   ls   = nb->stream[InteractionLocality::Local];
+    hipStream_t   ls   = nb->stream[InteractionLocality::Local];
 
-    stat = cudaMemsetAsync(adat->fshift, 0, SHIFTS * sizeof(*adat->fshift), ls);
-    CU_RET_ERR(stat, "cudaMemsetAsync on fshift falied");
-    stat = cudaMemsetAsync(adat->e_lj, 0, sizeof(*adat->e_lj), ls);
-    CU_RET_ERR(stat, "cudaMemsetAsync on e_lj falied");
-    stat = cudaMemsetAsync(adat->e_el, 0, sizeof(*adat->e_el), ls);
-    CU_RET_ERR(stat, "cudaMemsetAsync on e_el falied");
+    stat = hipMemsetAsync(adat->fshift, 0, SHIFTS * sizeof(*adat->fshift), ls);
+    CU_RET_ERR(stat, "hipMemsetAsync on fshift falied");
+    stat = hipMemsetAsync(adat->e_lj, 0, sizeof(*adat->e_lj), ls);
+    CU_RET_ERR(stat, "hipMemsetAsync on e_lj falied");
+    stat = hipMemsetAsync(adat->e_el, 0, sizeof(*adat->e_el), ls);
+    CU_RET_ERR(stat, "hipMemsetAsync on e_el falied");
 }
 
 void gpu_clear_outputs(gmx_nbnxn_cuda_t* nb, bool computeVirial)
@@ -616,13 +616,13 @@ void gpu_clear_outputs(gmx_nbnxn_cuda_t* nb, bool computeVirial)
 
 void gpu_init_atomdata(gmx_nbnxn_cuda_t* nb, const nbnxn_atomdata_t* nbat)
 {
-    cudaError_t    stat;
+    hipError_t    stat;
     int            nalloc, natoms;
     bool           realloced;
     bool           bDoTime = nb->bDoTime;
     cu_timers_t*   timers  = nb->timers;
     cu_atomdata_t* d_atdat = nb->atdat;
-    cudaStream_t   ls      = nb->stream[InteractionLocality::Local];
+    hipStream_t   ls      = nb->stream[InteractionLocality::Local];
 
     natoms    = nbat->numAtoms();
     realloced = false;
@@ -648,19 +648,19 @@ void gpu_init_atomdata(gmx_nbnxn_cuda_t* nb, const nbnxn_atomdata_t* nbat)
             freeDeviceBuffer(&d_atdat->lj_comb);
         }
 
-        stat = cudaMalloc((void**)&d_atdat->f, nalloc * sizeof(*d_atdat->f));
-        CU_RET_ERR(stat, "cudaMalloc failed on d_atdat->f");
-        stat = cudaMalloc((void**)&d_atdat->xq, nalloc * sizeof(*d_atdat->xq));
-        CU_RET_ERR(stat, "cudaMalloc failed on d_atdat->xq");
+        stat = hipMalloc((void**)&d_atdat->f, nalloc * sizeof(*d_atdat->f));
+        CU_RET_ERR(stat, "hipMalloc failed on d_atdat->f");
+        stat = hipMalloc((void**)&d_atdat->xq, nalloc * sizeof(*d_atdat->xq));
+        CU_RET_ERR(stat, "hipMalloc failed on d_atdat->xq");
         if (useLjCombRule(nb->nbparam))
         {
-            stat = cudaMalloc((void**)&d_atdat->lj_comb, nalloc * sizeof(*d_atdat->lj_comb));
-            CU_RET_ERR(stat, "cudaMalloc failed on d_atdat->lj_comb");
+            stat = hipMalloc((void**)&d_atdat->lj_comb, nalloc * sizeof(*d_atdat->lj_comb));
+            CU_RET_ERR(stat, "hipMalloc failed on d_atdat->lj_comb");
         }
         else
         {
-            stat = cudaMalloc((void**)&d_atdat->atom_types, nalloc * sizeof(*d_atdat->atom_types));
-            CU_RET_ERR(stat, "cudaMalloc failed on d_atdat->atom_types");
+            stat = hipMalloc((void**)&d_atdat->atom_types, nalloc * sizeof(*d_atdat->atom_types));
+            CU_RET_ERR(stat, "hipMalloc failed on d_atdat->atom_types");
         }
 
         d_atdat->nalloc = nalloc;
@@ -703,7 +703,7 @@ static void nbnxn_cuda_free_nbparam_table(cu_nbparam_t* nbparam)
 
 void gpu_free(gmx_nbnxn_cuda_t* nb)
 {
-    cudaError_t    stat;
+    hipError_t    stat;
     cu_atomdata_t* atdat;
     cu_nbparam_t*  nbparam;
 
@@ -717,10 +717,10 @@ void gpu_free(gmx_nbnxn_cuda_t* nb)
 
     nbnxn_cuda_free_nbparam_table(nbparam);
 
-    stat = cudaEventDestroy(nb->nonlocal_done);
-    CU_RET_ERR(stat, "cudaEventDestroy failed on timers->nonlocal_done");
-    stat = cudaEventDestroy(nb->misc_ops_and_local_H2D_done);
-    CU_RET_ERR(stat, "cudaEventDestroy failed on timers->misc_ops_and_local_H2D_done");
+    stat = hipEventDestroy(nb->nonlocal_done);
+    CU_RET_ERR(stat, "hipEventDestroy failed on timers->nonlocal_done");
+    stat = hipEventDestroy(nb->misc_ops_and_local_H2D_done);
+    CU_RET_ERR(stat, "hipEventDestroy failed on timers->misc_ops_and_local_H2D_done");
 
     delete nb->timers;
     if (nb->bDoTime)
@@ -728,8 +728,8 @@ void gpu_free(gmx_nbnxn_cuda_t* nb)
         /* The non-local counters/stream (second in the array) are needed only with DD. */
         for (int i = 0; i <= (nb->bUseTwoStreams ? 1 : 0); i++)
         {
-            stat = cudaStreamDestroy(nb->stream[i]);
-            CU_RET_ERR(stat, "cudaStreamDestroy failed on stream");
+            stat = hipStreamDestroy(nb->stream[i]);
+            CU_RET_ERR(stat, "hipStreamDestroy failed on stream");
         }
     }
 
@@ -743,15 +743,15 @@ void gpu_free(gmx_nbnxn_cuda_t* nb)
         destroyParamLookupTable(nbparam->nbfp_comb, nbparam->nbfp_comb_texobj);
     }
 
-    stat = cudaFree(atdat->shift_vec);
-    CU_RET_ERR(stat, "cudaFree failed on atdat->shift_vec");
-    stat = cudaFree(atdat->fshift);
-    CU_RET_ERR(stat, "cudaFree failed on atdat->fshift");
+    stat = hipFree(atdat->shift_vec);
+    CU_RET_ERR(stat, "hipFree failed on atdat->shift_vec");
+    stat = hipFree(atdat->fshift);
+    CU_RET_ERR(stat, "hipFree failed on atdat->fshift");
 
-    stat = cudaFree(atdat->e_lj);
-    CU_RET_ERR(stat, "cudaFree failed on atdat->e_lj");
-    stat = cudaFree(atdat->e_el);
-    CU_RET_ERR(stat, "cudaFree failed on atdat->e_el");
+    stat = hipFree(atdat->e_lj);
+    CU_RET_ERR(stat, "hipFree failed on atdat->e_lj");
+    stat = hipFree(atdat->e_el);
+    CU_RET_ERR(stat, "hipFree failed on atdat->e_el");
 
     freeDeviceBuffer(&atdat->f);
     freeDeviceBuffer(&atdat->xq);
@@ -852,7 +852,7 @@ rvec* gpu_get_fshift(gmx_nbnxn_gpu_t* nb)
 /* TODO  Remove explicit pinning from host arrays from here and manage in a more natural way*/
 void nbnxn_gpu_init_x_to_nbat_x(const Nbnxm::GridSet& gridSet, gmx_nbnxn_gpu_t* gpu_nbv)
 {
-    cudaStream_t stream        = gpu_nbv->stream[InteractionLocality::Local];
+    hipStream_t stream        = gpu_nbv->stream[InteractionLocality::Local];
     bool         bDoTime       = gpu_nbv->bDoTime;
     const int    maxNumColumns = gridSet.numColumnsMax();
 
@@ -941,7 +941,7 @@ void nbnxn_gpu_init_add_nbat_f_to_f(const int*                  cell,
                                     GpuEventSynchronizer* const localReductionDone)
 {
 
-    cudaStream_t stream = gpu_nbv->stream[InteractionLocality::Local];
+    hipStream_t stream = gpu_nbv->stream[InteractionLocality::Local];
 
     GMX_ASSERT(localReductionDone, "localReductionDone should be a valid pointer");
     gpu_nbv->localFReductionDone = localReductionDone;

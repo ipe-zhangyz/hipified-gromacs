@@ -82,7 +82,7 @@ public:
 
 private:
     //! CUDA stream for PME operations
-    cudaStream_t pmeStream_ = nullptr;
+    hipStream_t pmeStream_ = nullptr;
     //! communicator for simulation
     MPI_Comm comm_;
     //! list of PP ranks

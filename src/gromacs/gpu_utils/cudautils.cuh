@@ -66,8 +66,8 @@ static inline void ensureNoPendingCudaError(const char* errorMessage)
 {
     // Ensure there is no pending error that would otherwise affect
     // the behaviour of future error handling.
-    cudaError_t stat = cudaGetLastError();
-    if (stat == cudaSuccess)
+    hipError_t stat = hipGetLastError();
+    if (stat == hipSuccess)
     {
         return;
     }
@@ -77,8 +77,8 @@ static inline void ensureNoPendingCudaError(const char* errorMessage)
     // builds.
     auto fullMessage = formatString(
             "%s An unhandled error from a previous CUDA operation was detected. %s: %s",
-            errorMessage, cudaGetErrorName(stat), cudaGetErrorString(stat));
-    GMX_ASSERT(stat == cudaSuccess, fullMessage.c_str());
+            errorMessage, hipGetErrorName(stat), hipGetErrorString(stat));
+    GMX_ASSERT(stat == hipSuccess, fullMessage.c_str());
     // TODO When we evolve a better logging framework, use that
     // for release-build error reporting.
     gmx_warning("%s", fullMessage.c_str());
@@ -108,9 +108,9 @@ enum class GpuApiCallBehavior;
 #    define CU_RET_ERR(status, msg)                                            \
         do                                                                     \
         {                                                                      \
-            if (status != cudaSuccess)                                         \
+            if (status != hipSuccess)                                         \
             {                                                                  \
-                gmx_fatal(FARGS, "%s: %s\n", msg, cudaGetErrorString(status)); \
+                gmx_fatal(FARGS, "%s: %s\n", msg, hipGetErrorString(status)); \
             }                                                                  \
         } while (0)
 
@@ -118,13 +118,13 @@ enum class GpuApiCallBehavior;
 #    define CU_CHECK_PREV_ERR()                                                           \
         do                                                                                \
         {                                                                                 \
-            cudaError_t _CU_CHECK_PREV_ERR_status = cudaGetLastError();                   \
-            if (_CU_CHECK_PREV_ERR_status != cudaSuccess)                                 \
+            hipError_t _CU_CHECK_PREV_ERR_status = hipGetLastError();                   \
+            if (_CU_CHECK_PREV_ERR_status != hipSuccess)                                 \
             {                                                                             \
                 gmx_warning(                                                              \
                         "Just caught a previously occurred CUDA error (%s), will try to " \
                         "continue.",                                                      \
-                        cudaGetErrorString(_CU_CHECK_PREV_ERR_status));                   \
+                        hipGetErrorString(_CU_CHECK_PREV_ERR_status));                   \
             }                                                                             \
         } while (0)
 
@@ -150,7 +150,7 @@ enum class GpuApiCallBehavior;
 struct gmx_device_info_t
 {
     int            id;   /* id of the CUDA device */
-    cudaDeviceProp prop; /* CUDA device properties */
+    hipDeviceProp_t prop; /* CUDA device properties */
     int            stat; /* result of the device check */
 };
 
@@ -158,25 +158,25 @@ struct gmx_device_info_t
  *
  *  The copy is launched in stream s or if not specified, in stream 0.
  */
-int cu_copy_D2H(void* h_dest, void* d_src, size_t bytes, GpuApiCallBehavior transferKind, cudaStream_t /*s = nullptr*/);
+int cu_copy_D2H(void* h_dest, void* d_src, size_t bytes, GpuApiCallBehavior transferKind, hipStream_t /*s = nullptr*/);
 
 /*! Launches synchronous host to device memory copy in stream 0. */
 int cu_copy_D2H_sync(void* /*h_dest*/, void* /*d_src*/, size_t /*bytes*/);
 
 /*! Launches asynchronous host to device memory copy in stream s. */
-int cu_copy_D2H_async(void* /*h_dest*/, void* /*d_src*/, size_t /*bytes*/, cudaStream_t /*s = nullptr*/);
+int cu_copy_D2H_async(void* /*h_dest*/, void* /*d_src*/, size_t /*bytes*/, hipStream_t /*s = nullptr*/);
 
 /*! Launches synchronous or asynchronous host to device memory copy.
  *
  *  The copy is launched in stream s or if not specified, in stream 0.
  */
-int cu_copy_H2D(void* d_dest, const void* h_src, size_t bytes, GpuApiCallBehavior transferKind, cudaStream_t /*s = nullptr*/);
+int cu_copy_H2D(void* d_dest, const void* h_src, size_t bytes, GpuApiCallBehavior transferKind, hipStream_t /*s = nullptr*/);
 
 /*! Launches synchronous host to device memory copy. */
 int cu_copy_H2D_sync(void* /*d_dest*/, const void* /*h_src*/, size_t /*bytes*/);
 
 /*! Launches asynchronous host to device memory copy in stream s. */
-int cu_copy_H2D_async(void* /*d_dest*/, const void* /*h_src*/, size_t /*bytes*/, cudaStream_t /*s = nullptr*/);
+int cu_copy_H2D_async(void* /*d_dest*/, const void* /*h_src*/, size_t /*bytes*/, hipStream_t /*s = nullptr*/);
 
 // TODO: the 2 functions below are pretty much a constructor/destructor of a simple
 // GPU table object. There is also almost self-contained fetchFromParamLookupTable()
@@ -194,12 +194,12 @@ int cu_copy_H2D_async(void* /*d_dest*/, const void* /*h_src*/, size_t /*bytes*/,
  * \param[in]  numElem   number of elements in the h_ptr
  */
 template<typename T>
-void initParamLookupTable(T*& d_ptr, cudaTextureObject_t& texObj, const T* h_ptr, int numElem);
+void initParamLookupTable(T*& d_ptr, hipTextureObject_t& texObj, const T* h_ptr, int numElem);
 
 // Add extern declarations so each translation unit understands that
 // there will be a definition provided.
-extern template void initParamLookupTable<int>(int*&, cudaTextureObject_t&, const int*, int);
-extern template void initParamLookupTable<float>(float*&, cudaTextureObject_t&, const float*, int);
+extern template void initParamLookupTable<int>(int*&, hipTextureObject_t&, const int*, int);
+extern template void initParamLookupTable<float>(float*&, hipTextureObject_t&, const float*, int);
 
 /*! \brief Destroy parameter lookup table.
  *
@@ -210,12 +210,12 @@ extern template void initParamLookupTable<float>(float*&, cudaTextureObject_t&, 
  * \param[in]  texObj    Texture object to be deinitialized
  */
 template<typename T>
-void destroyParamLookupTable(T* d_ptr, cudaTextureObject_t texObj);
+void destroyParamLookupTable(T* d_ptr, hipTextureObject_t texObj);
 
 // Add extern declarations so each translation unit understands that
 // there will be a definition provided.
-extern template void destroyParamLookupTable<int>(int*, cudaTextureObject_t);
-extern template void destroyParamLookupTable<float>(float*, cudaTextureObject_t);
+extern template void destroyParamLookupTable<int>(int*, hipTextureObject_t);
+extern template void destroyParamLookupTable<float>(float*, hipTextureObject_t);
 
 /*! \brief Add a triplets stored in a float3 to an rvec variable.
  *
@@ -232,10 +232,10 @@ static inline void rvec_inc(rvec a, const float3 b)
  *
  * \param[in] s stream to synchronize with
  */
-static inline void gpuStreamSynchronize(cudaStream_t s)
+static inline void gpuStreamSynchronize(hipStream_t s)
 {
-    cudaError_t stat = cudaStreamSynchronize(s);
-    CU_RET_ERR(stat, "cudaStreamSynchronize failed");
+    hipError_t stat = hipStreamSynchronize(s);
+    CU_RET_ERR(stat, "hipStreamSynchronize failed");
 }
 
 /*! \brief  Returns true if all tasks in \p s have completed.
@@ -244,23 +244,23 @@ static inline void gpuStreamSynchronize(cudaStream_t s)
  *
  *  \returns     True if all tasks enqueued in the stream \p s (at the time of this call) have completed.
  */
-static inline bool haveStreamTasksCompleted(cudaStream_t s)
+static inline bool haveStreamTasksCompleted(hipStream_t s)
 {
-    cudaError_t stat = cudaStreamQuery(s);
+    hipError_t stat = hipStreamQuery(s);
 
-    if (stat == cudaErrorNotReady)
+    if (stat == hipErrorNotReady)
     {
         // work is still in progress in the stream
         return false;
     }
 
-    GMX_ASSERT(stat != cudaErrorInvalidResourceHandle, "Stream idnetifier not valid");
+    GMX_ASSERT(stat != hipErrorInvalidHandle, "Stream idnetifier not valid");
 
-    // cudaSuccess and cudaErrorNotReady are the expected return values
-    CU_RET_ERR(stat, "Unexpected cudaStreamQuery failure");
+    // hipSuccess and hipErrorNotReady are the expected return values
+    CU_RET_ERR(stat, "Unexpected hipStreamQuery failure");
 
-    GMX_ASSERT(stat == cudaSuccess,
-               "Values other than cudaSuccess should have been explicitly handled");
+    GMX_ASSERT(stat == hipSuccess,
+               "Values other than hipSuccess should have been explicitly handled");
 
     return true;
 }
@@ -348,15 +348,15 @@ void launchGpuKernel(void (*kernel)(Args...),
 {
     dim3 blockSize(config.blockSize[0], config.blockSize[1], config.blockSize[2]);
     dim3 gridSize(config.gridSize[0], config.gridSize[1], config.gridSize[2]);
-    cudaLaunchKernel((void*)kernel, gridSize, blockSize, const_cast<void**>(kernelArgs.data()),
+    hipLaunchKernel((void*)kernel, gridSize, blockSize, const_cast<void**>(kernelArgs.data()),
                      config.sharedMemorySize, config.stream);
 
-    cudaError_t status = cudaGetLastError();
-    if (cudaSuccess != status)
+    hipError_t status = hipGetLastError();
+    if (hipSuccess != status)
     {
         const std::string errorMessage =
                 "GPU kernel (" + std::string(kernelName)
-                + ") failed to launch: " + std::string(cudaGetErrorString(status));
+                + ") failed to launch: " + std::string(hipGetErrorString(status));
         GMX_THROW(gmx::InternalError(errorMessage));
     }
 }
