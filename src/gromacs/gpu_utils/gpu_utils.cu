@@ -202,7 +202,8 @@ static int do_sanity_checks(int dev_id, const hipDeviceProp_t& dev_prop)
     // Avoid triggering an error if GPU devices are in exclusive or prohibited mode;
     // it is enough to check for cudaErrorDevicesUnavailable only here because
     // if we encounter it that will happen in hipFuncGetAttributes in the above function.
-    if (cu_err == cudaErrorDevicesUnavailable)
+    //if (cu_err == cudaErrorDevicesUnavailable)
+    if (cu_err == hipErrorTbd)
     {
         return -2;
     }
@@ -216,8 +217,12 @@ static int do_sanity_checks(int dev_id, const hipDeviceProp_t& dev_prop)
     {
         KernelLaunchConfig config;
         config.blockSize[0]       = 512;
+#if CUDA_FOUND
         const auto dummyArguments = prepareGpuKernelArguments(k_dummy_test, config);
         launchGpuKernel(k_dummy_test, config, nullptr, "Dummy kernel", dummyArguments);
+#else
+        hiplaunchGpuKernel(k_dummy_test, config, nullptr, "Dummy kernel");
+#endif
     }
     catch (gmx::GromacsException& ex)
     {
@@ -498,9 +503,10 @@ void get_gpu_device_info_string(char* s, const gmx_gpu_info_t& gpu_info, int ind
     }
     else
     {
-        sprintf(s, "#%d: NVIDIA %s, compute cap.: %d.%d, ECC: %3s, stat: %s", dinfo->id,
+        //sprintf(s, "#%d: NVIDIA %s, compute cap.: %d.%d, ECC: %3s, stat: %s", dinfo->id,
+        sprintf(s, "#%d: NVIDIA %s, compute cap.: %d.%d, stat: %s", dinfo->id,
                 dinfo->prop.name, dinfo->prop.major, dinfo->prop.minor,
-                dinfo->prop.ECCEnabled ? "yes" : " no", gpu_detect_res_str[dinfo->stat]);
+                gpu_detect_res_str[dinfo->stat]);
     }
 }
 

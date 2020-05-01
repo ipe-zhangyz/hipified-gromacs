@@ -479,12 +479,15 @@ void LincsCuda::apply(const float3* d_x,
         config.sharedMemorySize = c_threadsPerBlock * 3 * sizeof(float);
     }
     config.stream = commandStream_;
-
+#if CUDA_FOUND
     const auto kernelArgs =
             prepareGpuKernelArguments(kernelPtr, config, &kernelParams_, &d_x, &d_xp, &d_v, &invdt);
 
     launchGpuKernel(kernelPtr, config, nullptr, "lincs_kernel<updateVelocities, computeVirial>", kernelArgs);
-
+#else
+    hiplaunchGpuKernel(kernelPtr, config, nullptr,
+                       "lincs_kernel<updateVelocities, computeVirial>", kernelParams_, d_x, d_xp, d_v, invdt);
+#endif
     if (computeVirial)
     {
         // Copy LINCS virial data and add it to the common virial

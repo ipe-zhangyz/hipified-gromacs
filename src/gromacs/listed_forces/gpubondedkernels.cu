@@ -51,7 +51,7 @@
 
 #include <cassert>
 
-#include <math_constants.h>
+//#include <math_constants.h> //this is a cuda header file. hip doesn't have it. only CUDART_PI_F is used, so we define it separately
 
 #include "gromacs/gpu_utils/cudautils.cuh"
 #include "gromacs/gpu_utils/gpu_vec.cuh"
@@ -71,11 +71,11 @@
 #endif
 
 // CUDA threads per block
-#define TPB_BONDED 256
+#define TPB_BONDED 64
 
 /*-------------------------------- CUDA kernels-------------------------------- */
 /*------------------------------------------------------------------------------*/
-
+#define CUDART_PI_F 3.141592654f
 #define CUDA_DEG2RAD_F (CUDART_PI_F / 180.0f)
 
 /*---------------- BONDED CUDA kernels--------------*/
@@ -779,7 +779,7 @@ __global__ void exec_kernel_gpu(BondedCudaKernelParameters kernelParams)
         __syncthreads();
     }
 
-    int  fType;
+    int  fType, shr_ndx = 0;
     bool threadComputedPotential = false;
 #pragma unroll
     for (int j = 0; j < numFTypesOnGpu; j++)
@@ -806,27 +806,37 @@ __global__ void exec_kernel_gpu(BondedCudaKernelParameters kernelParams)
                     angles_gpu<calcVir, calcEner>(
                             fTypeTid, &vtot_loc, numBonds, iatoms, kernelParams.d_forceParams,
                             kernelParams.d_xq, kernelParams.d_f, sm_fShiftLoc, kernelParams.pbcAiuc);
+                    shr_ndx = 1;
                     break;
                 case F_UREY_BRADLEY:
                     urey_bradley_gpu<calcVir, calcEner>(
                             fTypeTid, &vtot_loc, numBonds, iatoms, kernelParams.d_forceParams,
                             kernelParams.d_xq, kernelParams.d_f, sm_fShiftLoc, kernelParams.pbcAiuc);
+                    shr_ndx = 2;
                     break;
                 case F_PDIHS:
+                    pdihs_gpu<calcVir, calcEner>(fTypeTid, &vtot_loc, numBonds, iatoms,
+                                                 kernelParams.d_forceParams, kernelParams.d_xq,
+                                                 kernelParams.d_f, sm_fShiftLoc, kernelParams.pbcAiuc);
+                    shr_ndx = 3;
+                    break;
                 case F_PIDIHS:
                     pdihs_gpu<calcVir, calcEner>(fTypeTid, &vtot_loc, numBonds, iatoms,
                                                  kernelParams.d_forceParams, kernelParams.d_xq,
                                                  kernelParams.d_f, sm_fShiftLoc, kernelParams.pbcAiuc);
+                    shr_ndx = 4;
                     break;
                 case F_RBDIHS:
                     rbdihs_gpu<calcVir, calcEner>(
                             fTypeTid, &vtot_loc, numBonds, iatoms, kernelParams.d_forceParams,
                             kernelParams.d_xq, kernelParams.d_f, sm_fShiftLoc, kernelParams.pbcAiuc);
+                    shr_ndx = 5;
                     break;
                 case F_IDIHS:
                     idihs_gpu<calcVir, calcEner>(fTypeTid, &vtot_loc, numBonds, iatoms,
                                                  kernelParams.d_forceParams, kernelParams.d_xq,
                                                  kernelParams.d_f, sm_fShiftLoc, kernelParams.pbcAiuc);
+                    shr_ndx = 6;
                     break;
                 case F_LJ14:
                     pairs_gpu<calcVir, calcEner>(fTypeTid, numBonds, iatoms, kernelParams.d_forceParams,
@@ -841,11 +851,43 @@ __global__ void exec_kernel_gpu(BondedCudaKernelParameters kernelParams)
 
     if (threadComputedPotential)
     {
-        float* vtotVdw  = kernelParams.d_vTot + F_LJ14;
-        float* vtotElec = kernelParams.d_vTot + F_COUL14;
-        atomicAdd(kernelParams.d_vTot + fType, vtot_loc);
-        atomicAdd(vtotVdw, vtotVdw_loc);
-        atomicAdd(vtotElec, vtotElec_loc);
+        //float* vtotVdw  = kernelParams.d_vTot + F_LJ14;
+        //float* vtotElec = kernelParams.d_vTot + F_COUL14;
+        //atomicAdd(kernelParams.d_vTot + fType, vtot_loc);
+        //atomicAdd(vtotVdw, vtotVdw_loc);
+        //atomicAdd(vtotElec, vtotElec_loc);
+        __shared__ float vtot_shr[7];
+        __shared__ float vtotVdw_shr;
+        __shared__ float vtotElec_shr;
+        if (threadIdx.x < 7)
+        {
+            vtot_shr[threadIdx.x] = 0;
+        }
+        if (threadIdx.x == 7) vtotVdw_shr = 0;
+        if (threadIdx.x == 8) vtotElec_shr = 0;
+        __syncthreads();
+        atomicAdd(vtot_shr + shr_ndx, vtot_loc);
+        atomicAdd(&vtotVdw_shr, vtotVdw_loc);
+        atomicAdd(&vtotElec_shr, vtotElec_loc);
+
+        __syncthreads();
+       if (threadIdx.x == 0) atomicAdd(kernelParams.d_vTot + F_BONDS, vtot_shr[threadIdx.x]);
+       if (threadIdx.x == 1) atomicAdd(kernelParams.d_vTot + F_ANGLES, vtot_shr[threadIdx.x]);
+       if (threadIdx.x == 2) atomicAdd(kernelParams.d_vTot + F_UREY_BRADLEY, vtot_shr[threadIdx.x]);
+       if (threadIdx.x == 3) atomicAdd(kernelParams.d_vTot + F_PDIHS, vtot_shr[threadIdx.x]);
+       if (threadIdx.x == 4) atomicAdd(kernelParams.d_vTot + F_PIDIHS, vtot_shr[threadIdx.x]);
+       if (threadIdx.x == 5) atomicAdd(kernelParams.d_vTot + F_RBDIHS, vtot_shr[threadIdx.x]);
+       if (threadIdx.x == 6) atomicAdd(kernelParams.d_vTot + F_IDIHS, vtot_shr[threadIdx.x]);
+       if (threadIdx.x == 7)
+       {
+            float* vtotVdw  = kernelParams.d_vTot + F_LJ14;
+            atomicAdd(vtotVdw, vtotVdw_shr);
+        }
+       if (threadIdx.x == 8)
+       {
+            float* vtotElec = kernelParams.d_vTot + F_COUL14;
+            atomicAdd(vtotElec, vtotElec_shr);
+       }
     }
     /* Accumulate shift vectors from shared memory to global memory on the first SHIFTS threads of the block. */
     if (calcVir)
@@ -892,10 +934,13 @@ void GpuBonded::Impl::launchKernel(const t_forcerec* fr, const matrix box)
     auto kernelPtr            = exec_kernel_gpu<calcVir, calcEner>;
     kernelParams_.scaleFactor = fr->ic->epsfac * fr->fudgeQQ;
     kernelParams_.pbcAiuc     = pbcAiuc;
-
+#if CUDA_FOUND
     const auto kernelArgs = prepareGpuKernelArguments(kernelPtr, config, &kernelParams_);
 
     launchGpuKernel(kernelPtr, config, nullptr, "exec_kernel_gpu<calcVir, calcEner>", kernelArgs);
+#else
+    hiplaunchGpuKernel(kernelPtr, config, nullptr, "exec_kernel_gpu<calcVir, calcEner>", kernelParams_);
+#endif
 }
 
 void GpuBonded::launchKernel(const t_forcerec* fr, const gmx::StepWorkload& stepWork, const matrix box)

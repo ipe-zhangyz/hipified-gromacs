@@ -125,11 +125,11 @@ int pme_gpu_get_atoms_per_warp(const PmeGpu* pmeGpu)
 {
     if (pmeGpu->settings.useOrderThreadsPerAtom)
     {
-        return pmeGpu->programHandle_->impl_->warpSize / c_pmeSpreadGatherThreadsPerAtom4ThPerAtom;
+        return pmeGpu->programHandle_->impl_->hipWarpSize / c_pmeSpreadGatherThreadsPerAtom4ThPerAtom;
     }
     else
     {
-        return pmeGpu->programHandle_->impl_->warpSize / c_pmeSpreadGatherThreadsPerAtom;
+        return pmeGpu->programHandle_->impl_->hipWarpSize / c_pmeSpreadGatherThreadsPerAtom;
     }
 }
 
@@ -1251,6 +1251,7 @@ void pme_gpu_spread(const PmeGpu*         pmeGpu,
 
     pme_gpu_start_timing(pmeGpu, timingId);
     auto* timingEvent = pme_gpu_fetch_timing_event(pmeGpu, timingId);
+#if CUDA_FOUND
 #if c_canEmbedBuffers
     const auto kernelArgs = prepareGpuKernelArguments(kernelPtr, config, kernelParamsPtr);
 #else
@@ -1264,7 +1265,15 @@ void pme_gpu_spread(const PmeGpu*         pmeGpu,
 
     launchGpuKernel(kernelPtr, config, timingEvent, "PME spline/spread", kernelArgs);
     pme_gpu_stop_timing(pmeGpu, timingId);
-
+#else
+#if c_canEmbedBuffers
+    hiplaunchGpuKernel(kernelPtr, config, timingEvent, "PME spline/spread",  *kernelParamsPtr);
+#else
+    hiplaunchGpuKernel(kernelPtr, config, timingEvent, "PME spline/spread",  *kernelParamsPtr, kernelParamsPtr->atoms.d_theta, kernelParamsPtr->atoms.d_dtheta,
+                       kernelParamsPtr->atoms.d_gridlineIndices, kernelParamsPtr->grid.d_realGrid, kernelParamsPtr->grid.d_fractShiftsTable, kernelParamsPtr->grid.d_gridlineIndicesTable,
+                       kernelParamsPtr->atoms.d_coefficients, kernelParamsPtr->atoms.d_coordinates);
+#endif
+#endif
     const bool copyBackGrid =
             spreadCharges && (pme_gpu_is_testing(pmeGpu) || !pme_gpu_performs_FFT(pmeGpu));
     if (copyBackGrid)
@@ -1325,8 +1334,8 @@ void pme_gpu_solve(const PmeGpu* pmeGpu, t_complex* h_grid, GridOrdering gridOrd
     {
         cellsPerBlock = (gridLineSize + blocksPerGridLine - 1) / blocksPerGridLine;
     }
-    const int warpSize  = pmeGpu->programHandle_->impl_->warpSize;
-    const int blockSize = (cellsPerBlock + warpSize - 1) / warpSize * warpSize;
+    const int hipWarpSize  = pmeGpu->programHandle_->impl_->hipWarpSize;
+    const int blockSize = (cellsPerBlock + hipWarpSize - 1) / hipWarpSize * hipWarpSize;
 
     static_assert(GMX_GPU != GMX_GPU_CUDA || c_solveMaxWarpsPerBlock / 2 >= 4,
                   "The CUDA solve energy kernels needs at least 4 warps. "
@@ -1356,6 +1365,7 @@ void pme_gpu_solve(const PmeGpu* pmeGpu, t_complex* h_grid, GridOrdering gridOrd
 
     pme_gpu_start_timing(pmeGpu, timingId);
     auto* timingEvent = pme_gpu_fetch_timing_event(pmeGpu, timingId);
+#if CUDA_FOUND
 #if c_canEmbedBuffers
     const auto kernelArgs = prepareGpuKernelArguments(kernelPtr, config, kernelParamsPtr);
 #else
@@ -1365,6 +1375,16 @@ void pme_gpu_solve(const PmeGpu* pmeGpu, t_complex* h_grid, GridOrdering gridOrd
 #endif
     launchGpuKernel(kernelPtr, config, timingEvent, "PME solve", kernelArgs);
     pme_gpu_stop_timing(pmeGpu, timingId);
+#else
+#if c_canEmbedBuffers
+    hiplaunchGpuKernel(kernelPtr, config, timingEvent, "PME solve", *kernelParamsPtr);
+#else
+    hiplaunchGpuKernel(kernelPtr, config, timingEvent, "PME solve", *kernelParamsPtr,
+                       kernelParamsPtr->grid.d_splineModuli,
+                       kernelParamsPtr->constants.d_virialAndEnergy,
+                       kernelParamsPtr->grid.d_fourierGrid);
+#endif
+#endif
 
     if (computeEnergyAndVirial)
     {
@@ -1490,6 +1510,7 @@ void pme_gpu_gather(PmeGpu* pmeGpu, PmeForceOutputHandling forceTreatment, const
     pme_gpu_start_timing(pmeGpu, timingId);
     auto*       timingEvent     = pme_gpu_fetch_timing_event(pmeGpu, timingId);
     const auto* kernelParamsPtr = pmeGpu->kernelParams.get();
+#if CUDA_FOUND
 #if c_canEmbedBuffers
     const auto kernelArgs = prepareGpuKernelArguments(kernelPtr, config, kernelParamsPtr);
 #else
@@ -1501,7 +1522,19 @@ void pme_gpu_gather(PmeGpu* pmeGpu, PmeForceOutputHandling forceTreatment, const
 #endif
     launchGpuKernel(kernelPtr, config, timingEvent, "PME gather", kernelArgs);
     pme_gpu_stop_timing(pmeGpu, timingId);
-
+#else
+#if c_canEmbedBuffers
+    hiplaunchGpuKernel(kernelPtr, config, timingEvent, "PME gather", *kernelParamsPtr);
+#else
+    hiplaunchGpuKernel(kernelPtr, config, timingEvent, "PME gather", *kernelParamsPtr,
+                       kernelParamsPtr->atoms.d_coefficients,
+                       kernelParamsPtr->grid.d_realGrid,
+                       kernelParamsPtr->atoms.d_theta,
+                       kernelParamsPtr->atoms.d_dtheta,
+                       kernelParamsPtr->atoms.d_gridlineIndices,
+                       kernelParamsPtr->atoms.d_forces);
+#endif
+#endif
     if (pmeGpu->settings.useGpuForceReduction)
     {
         pmeGpu->archSpecific->pmeForcesReady.markEvent(pmeGpu->archSpecific->pmeStream);

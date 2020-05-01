@@ -39,6 +39,7 @@
 
 #include <array>
 #include <string>
+#include <utility>
 
 #include "gromacs/gpu_utils/gputraits.cuh"
 #include "gromacs/math/vec.h"
@@ -357,6 +358,26 @@ void launchGpuKernel(void (*kernel)(Args...),
         const std::string errorMessage =
                 "GPU kernel (" + std::string(kernelName)
                 + ") failed to launch: " + std::string(hipGetErrorString(status));
+        GMX_THROW(gmx::InternalError(errorMessage));
+    }
+}
+
+template <typename... Args>
+void hiplaunchGpuKernel(void                                       (*kernel)(Args...),
+                        const KernelLaunchConfig                    &config,
+                        CommandEvent *                               /*timingEvent */,
+                        const char                                  *kernelName,
+                        Args...          args)
+{
+    dim3 blockSize(config.blockSize[0], config.blockSize[1], config.blockSize[2]);
+    dim3 gridSize(config.gridSize[0], config.gridSize[1], config.gridSize[2]);
+    hipLaunchKernelGGL(kernel, gridSize, blockSize, config.sharedMemorySize, config.stream, std::forward<Args>(args)...);
+
+    hipError_t status = hipGetLastError();
+    if (hipSuccess != status)
+    {
+        const std::string errorMessage = "GPU kernel (" +  std::string(kernelName) +
+            ") failed to launch: " + std::string(hipGetErrorString(status));
         GMX_THROW(gmx::InternalError(errorMessage));
     }
 }

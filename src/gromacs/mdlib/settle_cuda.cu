@@ -459,13 +459,16 @@ void SettleCuda::apply(const float3* d_x,
         config.sharedMemorySize = 0;
     }
     config.stream = commandStream_;
-
+#if CUDA_FOUND
     const auto kernelArgs = prepareGpuKernelArguments(kernelPtr, config, &numSettles_, &d_atomIds_,
                                                       &settleParameters_, &d_x, &d_xp, &pbcAiuc_,
                                                       &invdt, &d_v, &d_virialScaled_);
 
     launchGpuKernel(kernelPtr, config, nullptr, "settle_kernel<updateVelocities, computeVirial>", kernelArgs);
-
+#else
+    hiplaunchGpuKernel(kernelPtr, config, nullptr,
+                      "settle_kernel<updateVelocities, computeVirial>", numSettles_, (const int3*)d_atomIds_,settleParameters_,d_x,d_xp,pbcAiuc_,invdt,d_v,d_virialScaled_);
+#endif
     if (computeVirial)
     {
         copyFromDeviceBuffer(h_virialScaled_.data(), &d_virialScaled_, 0, 6, commandStream_,

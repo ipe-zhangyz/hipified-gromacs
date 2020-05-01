@@ -230,11 +230,14 @@ void GpuHaloExchange::Impl::communicateHaloCoordinates(const matrix          box
     if (size > 0)
     {
         auto kernelFn = usePBC_ ? packSendBufKernel<true> : packSendBufKernel<false>;
-
+#if CUDA_FOUND
         const auto kernelArgs = prepareGpuKernelArguments(kernelFn, config, &sendBuf, &d_x,
                                                           &indexMap, &size, &coordinateShift);
 
         launchGpuKernel(kernelFn, config, nullptr, "Domdec GPU Apply X Halo Exchange", kernelArgs);
+#else
+        hiplaunchGpuKernel(kernelFn, config, nullptr, "Domdec GPU Apply X Halo Exchange", (float3*)sendBuf, d_x, indexMap, size, coordinateShift);
+#endif
     }
 
     communicateHaloData(d_x_, HaloQuantity::HaloCoordinates, coordinatesReadyOnDeviceEvent);
@@ -285,11 +288,14 @@ void GpuHaloExchange::Impl::communicateHaloForces(bool accumulateForces)
     if (size > 0)
     {
         auto kernelFn = accumulateForces ? unpackRecvBufKernel<true> : unpackRecvBufKernel<false>;
-
+#if CUDA_FOUND
         const auto kernelArgs =
                 prepareGpuKernelArguments(kernelFn, config, &d_f, &recvBuf, &indexMap, &size);
 
         launchGpuKernel(kernelFn, config, nullptr, "Domdec GPU Apply F Halo Exchange", kernelArgs);
+#else
+        hiplaunchGpuKernel(kernelFn, config, nullptr, "Domdec GPU Apply F Halo Exchange", d_f, recvBuf, indexMap, size);
+#endif
     }
     fReadyOnDevice_.markEvent(nonLocalStream_);
 }

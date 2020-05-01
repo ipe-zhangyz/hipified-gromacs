@@ -310,12 +310,15 @@ void LeapFrogCuda::integrate(const float3*                     d_x,
         }
         kernelPtr = selectLeapFrogKernelPtr(doTemperatureScaling, numTempScaleValues_, prVelocityScalingType);
     }
-
+#if CUDA_FOUND
     const auto kernelArgs = prepareGpuKernelArguments(
             kernelPtr, kernelLaunchConfig_, &numAtoms_, &d_x, &d_xp, &d_v, &d_f, &d_inverseMasses_,
             &dt, &d_lambdas_, &d_tempScaleGroups_, &prVelocityScalingMatrixDiagonal_);
     launchGpuKernel(kernelPtr, kernelLaunchConfig_, nullptr, "leapfrog_kernel", kernelArgs);
-
+#else
+    hiplaunchGpuKernel(kernelPtr, kernelLaunchConfig_, nullptr, "leapfrog_kernel", numAtoms_, (float3 *)d_x, d_xp, d_v, d_f, (const float *)d_inverseMasses_, 
+                       dt, (const float *)d_lambdas_, (const unsigned short *)d_tempScaleGroups_, prVelocityScalingMatrixDiagonal_);
+#endif
     return;
 }
 

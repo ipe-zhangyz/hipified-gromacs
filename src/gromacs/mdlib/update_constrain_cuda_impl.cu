@@ -155,11 +155,15 @@ void UpdateConstrainCuda::Impl::scaleCoordinates(const matrix scalingMatrix)
     mu.yx = scalingMatrix[YY][XX];
     mu.zx = scalingMatrix[ZZ][XX];
     mu.zy = scalingMatrix[ZZ][YY];
-
+#if CUDA_FOUND
     const auto kernelArgs = prepareGpuKernelArguments(
             scaleCoordinates_kernel, coordinateScalingKernelLaunchConfig_, &numAtoms_, &d_x_, &mu);
     launchGpuKernel(scaleCoordinates_kernel, coordinateScalingKernelLaunchConfig_, nullptr,
                     "scaleCoordinates_kernel", kernelArgs);
+#else
+    hiplaunchGpuKernel(scaleCoordinates_kernel, coordinateScalingKernelLaunchConfig_, nullptr,
+                       "scaleCoordinates_kernel", numAtoms_, d_x_, mu);
+#endif  
     // TODO: Although this only happens on the pressure coupling steps, this synchronization
     //       can affect the perfornamce if nstpcouple is small.
     gpuStreamSynchronize(commandStream_);

@@ -53,6 +53,7 @@
 
 #include "nbnxm_cuda.h"
 
+#include <hip/hip_runtime.h>
 #include "gromacs/gpu_utils/cudautils.cuh"
 #include "gromacs/gpu_utils/gpueventsynchronizer.cuh"
 #include "gromacs/gpu_utils/vectype_ops.cuh"
@@ -294,7 +295,7 @@ static inline nbnxn_cu_kfunc_ptr_t select_nbnxn_kernel(int                     e
 
     /* assert assumptions made by the kernels */
     GMX_ASSERT(c_nbnxnGpuClusterSize * c_nbnxnGpuClusterSize / c_nbnxnGpuClusterpairSplit
-                       == devInfo->prop.warpSize,
+                       == devInfo->prop.hipWarpSize,
                "The CUDA kernels require the "
                "cluster_size_i*cluster_size_j/nbnxn_gpu_clusterpair_split to match the warp size "
                "of the architecture targeted.");
@@ -559,10 +560,13 @@ void gpu_launch_kernel(gmx_nbnxn_cuda_t* nb, const gmx::StepWorkload& stepWork, 
     const auto kernel      = select_nbnxn_kernel(
             nbp->eeltype, nbp->vdwtype, stepWork.computeEnergy,
             (plist->haveFreshList && !nb->timers->interaction[iloc].didPrune), nb->dev_info);
+#if CUDA_FOUND
     const auto kernelArgs =
             prepareGpuKernelArguments(kernel, config, adat, nbp, plist, &stepWork.computeVirial);
     launchGpuKernel(kernel, config, timingEvent, "k_calc_nb", kernelArgs);
-
+#else
+    hiplaunchGpuKernel(kernel, config, timingEvent, "k_calc_nb", *adat, *nbp, *plist, stepWork.computeVirial);
+#endif
     if (bDoTime)
     {
         t->interaction[iloc].nb_k.closeTimingRegion(stream);
@@ -683,9 +687,12 @@ void gpu_launch_kernel_pruneonly(gmx_nbnxn_cuda_t* nb, const InteractionLocality
     constexpr char kernelName[] = "k_pruneonly";
     const auto     kernel =
             plist->haveFreshList ? nbnxn_kernel_prune_cuda<true> : nbnxn_kernel_prune_cuda<false>;
+#if CUDA_FOUND
     const auto kernelArgs = prepareGpuKernelArguments(kernel, config, adat, nbp, plist, &numParts, &part);
     launchGpuKernel(kernel, config, timingEvent, kernelName, kernelArgs);
-
+#else
+    hiplaunchGpuKernel(kernel, config, timingEvent, kernelName, *adat, *nbp, *plist, numParts, part);
+#endif
     /* TODO: consider a more elegant way to track which kernel has been called
        (combined or separate 1st pass prune, rolling prune). */
     if (plist->haveFreshList)
@@ -863,10 +870,14 @@ void nbnxn_gpu_x_to_nbat_x(const Nbnxm::Grid&        grid,
         const int* d_atomIndices = nb->atomIndices;
         const int* d_cxy_na      = &nb->cxy_na[numColumnsMax * gridId];
         const int* d_cxy_ind     = &nb->cxy_ind[numColumnsMax * gridId];
+#if CUDA_FOUND
         const auto kernelArgs    = prepareGpuKernelArguments(
                 kernelFn, config, &numColumns, &d_xq, &setFillerCoords, &d_x, &d_atomIndices,
                 &d_cxy_na, &d_cxy_ind, &cellOffset, &numAtomsPerCell);
         launchGpuKernel(kernelFn, config, nullptr, "XbufferOps", kernelArgs);
+#else
+        hiplaunchGpuKernel(kernelFn, config, nullptr, "XbufferOps",numColumns, d_xq, setFillerCoords, (const float3 *)d_x, d_atomIndices, d_cxy_na, d_cxy_ind, cellOffset, numAtomsPerCell);
+#endif
     }
 
     // TODO: note that this is not necessary when there are no local atoms, that is:
@@ -937,10 +948,14 @@ void nbnxn_gpu_add_nbat_f_to_f(const AtomLocality                         atomLo
     float3*       d_fTotal = (float3*)totalForcesDevice;
     const int*    d_cell   = nb->cell;
 
+#if CUDA_FOUND
     const auto kernelArgs = prepareGpuKernelArguments(kernelFn, config, &d_fNB, &d_fPme, &d_fTotal,
                                                       &d_cell, &atomStart, &numAtoms);
 
-    launchGpuKernel(kernelFn, config, nullptr, "FbufferOps", kernelArgs);
+    launchgpukernel(kernelfn, config, nullptr, "fbufferops", kernelargs);
+#else
+    hiplaunchGpuKernel(kernelFn, config, nullptr, "FbufferOps", d_fNB, d_fPme, d_fTotal, d_cell, atomStart, numAtoms);
+#endif
 
     if (atomLocality == AtomLocality::Local)
     {
