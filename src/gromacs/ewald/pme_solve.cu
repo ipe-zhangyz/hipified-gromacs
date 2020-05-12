@@ -346,7 +346,9 @@ __launch_bounds__(c_solveMaxThreadsPerBlock) CLANG_DISABLE_OPTIMIZATION_ATTRIBUT
             if (validComponentIndex)
             {
                 assert(isfinite(output));
-                atomicAdd(gm_virialAndEnergy + componentIndex, output);
+             //   atomicAdd(gm_virialAndEnergy + componentIndex, output);
+                int block_id = blockIdx.z * (gridDim.x * gridDim.y) + blockIdx.y * gridDim.x + blockIdx.x;
+                gm_virialAndEnergy[7+block_id + componentIndex * gridDim.x * gridDim.y * gridDim.z] = output;
             }
         }
     }
