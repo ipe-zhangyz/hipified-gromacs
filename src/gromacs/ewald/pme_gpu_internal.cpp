@@ -1347,9 +1347,10 @@ void pme_gpu_spread(const PmeGpu*         pmeGpu,
 //  variable is extremely slow. Therefore, in hip we make the pme_solve_kernel write the virial and 
 //  energy results to global memory directly, each kernel block of the pme_solve_kernel write 7 results,
 //  without any addition to results of other blocks. Then the following kernel is launched to the same
-//  stream of pme_solve_kernel to reduce the virial and energy results. For every virial or energy variable,
-//  we launch only one block of this kernel. It reads a type of virial or energy variable from the global
-//  memory (solve_BLOCKS in amount), recudes them to one result and writes it to the global memory.
+//  stream of pme_solve_kernel to reduce the virial and energy results. The gridSize of this kernel is 
+//  kept to 1 to avoid any addition in global memory. It reads a type of virial or energy variable from 
+//  the global memory (solve_BLOCKS in amount) for 7 times, recudes them to one result and writes it to 
+//  the global memory.
 //  parameters:
 //  in -- results of virials and energy writed to global memory by the pme_solve_kernel
 //  out -- result reduced by this kernel and will be write the global memory
@@ -1362,27 +1363,32 @@ __global__ void pme_solve_reduceEnergy(float *in, float *out, const int blockSiz
     const int num_iters = solve_BLOCKS / blockSize + 1;
     HIP_DYNAMIC_SHARED(float, shm);
     const int shm_length = blockSize / 64;
-    if(threadIdx.x < shm_length)
-       shm[threadIdx.x] = 0;
-    for(int iter = 0; iter < num_iters; ++iter)
+    for(int num_vir = 0; num_vir < 7; ++num_vir)
     {
-       int current_item = threadIdx.x + iter * blockSize;
-       if(current_item < solve_BLOCKS)
-       {
-          local_item = in[current_item];
-          for (int i=32; i>=1; i/=2)
-             local_item += __shfl_xor(local_item, i, 64);
-          const int shm_item_id = threadIdx.x / 64;
-          if((threadIdx.x & 0x3f) == 0)
-             shm[shm_item_id] += local_item;
-          __syncthreads();
-       }
-    }
-    if(threadIdx.x == 0)
-    {
-         for(int i = 1; i < shm_length; ++i)
-            shm[0] += shm[i];
-         *out = shm[0];
+        if(threadIdx.x < shm_length)
+            shm[threadIdx.x] = 0;
+        __syncthreads();
+        for(int iter = 0; iter < num_iters; ++iter)
+        {
+           int current_item = threadIdx.x + iter * blockSize + num_vir * solve_BLOCKS;
+           if(current_item < solve_BLOCKS * (num_vir+1))
+           {
+              local_item = in[current_item];
+              for (int i=32; i>=1; i/=2)
+                  local_item += __shfl_xor(local_item, i, 64);
+              const int shm_item_id = threadIdx.x / 64;
+              if((threadIdx.x & 0x3f) == 0)
+                 shm[shm_item_id] += local_item;
+           }
+           __syncthreads();
+        }
+        if(threadIdx.x == 0)
+        {
+             for(int i = 1; i < shm_length; ++i)
+                shm[0] += shm[i];
+             out[num_vir] = shm[0];
+        }
+        __syncthreads();
     }
 }
                                                                                          
@@ -1488,13 +1494,9 @@ void pme_gpu_solve(const PmeGpu* pmeGpu, t_complex* h_grid, GridOrdering gridOrd
     {
        const int solve_blocks = config.gridSize[0] * config.gridSize[1] * config.gridSize[2];
        const int add_blocks  = solve_blocks / 1024 + 1;
-       for(int i = 0; i < 7; ++i)
-       {
-           int offset = i * solve_blocks;
-           hipLaunchKernelGGL(pme_solve_reduceEnergy, dim3(add_blocks),
-                              dim3(1024), add_blocks/64 + 1, pmeGpu->archSpecific->pmeStream, kernelParamsPtr->constants.d_virialAndEnergy + 7 + offset, 
-                              kernelParamsPtr->constants.d_virialAndEnergy + i, 1024, solve_blocks);
-       }
+       hipLaunchKernelGGL(pme_solve_reduceEnergy, dim3(add_blocks),
+                          dim3(1024), add_blocks/64 + 1, pmeGpu->archSpecific->pmeStream, kernelParamsPtr->constants.d_virialAndEnergy + 7, 
+                          kernelParamsPtr->constants.d_virialAndEnergy, 1024, solve_blocks);
      }  
 #endif
 
