@@ -1502,7 +1502,8 @@ void pme_gpu_solve(const PmeGpu* pmeGpu, t_complex* h_grid, GridOrdering gridOrd
     {
         copyFromDeviceBuffer(pmeGpu->staging.h_virialAndEnergy,
                              &kernelParamsPtr->constants.d_virialAndEnergy, 0, c_virialAndEnergyCount,
-                             pmeGpu->archSpecific->pmeStream, pmeGpu->settings.transferKind, nullptr);
+                             //pmeGpu->archSpecific->pmeStream, pmeGpu->settings.transferKind, nullptr);
+                             pmeGpu->archSpecific->pmeStream, GpuApiCallBehavior::Sync, nullptr);
     }
 
     if (copyInputAndOutputGrid)
