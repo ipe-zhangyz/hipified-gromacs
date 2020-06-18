@@ -222,7 +222,8 @@ __launch_bounds__(THREADS_PER_BLOCK)
     unsigned int bidx  = blockIdx.x;
     unsigned int widx  = tidx / warp_size; /* warp index */
 
-    int          sci, ci, cj, ai, aj, cij4_start, cij4_end;
+    //int          sci, ci, cj, ai, aj, cij4_start, cij4_end;
+    int          sci, ci, cj, ai, aj, nb_sci_shift;
 #    ifndef LJ_COMB
     int          typei, typej;
 #    endif
@@ -245,7 +246,7 @@ __launch_bounds__(THREADS_PER_BLOCK)
     float4       xqbuf;
     float3       xi, xj, rv, f_ij, fcj_buf;
     float3       fci_buf[c_numClPerSupercl]; /* i force buffer */
-    nbnxn_sci_t  nb_sci;
+    //nbnxn_sci_t  nb_sci;
 
     /*! i-cluster interaction mask for a super-cluster with all c_numClPerSupercl=8 bits set */
     const unsigned superClInteractionMask = ((1U << c_numClPerSupercl) - 1U);
@@ -260,6 +261,12 @@ __launch_bounds__(THREADS_PER_BLOCK)
     static_assert(sizeof(char) == 1,
                   "The shared memory offset calculation assumes that char is 1 byte");
 
+    /***********************************************************/
+    nbnxn_sci_t *nb_sci = (nbnxn_sci_t*)sm_nextSlotPtr;
+    sm_nextSlotPtr += sizeof(*nb_sci);
+  
+    /***********************************************************/
+
     /* shmem buffer for i x+q pre-loading */
     float4* xqib = (float4*)sm_nextSlotPtr;
     sm_nextSlotPtr += (c_numClPerSupercl * c_clSize * sizeof(*xqib));
@@ -267,8 +274,12 @@ __launch_bounds__(THREADS_PER_BLOCK)
     /* shmem buffer for cj, for each warp separately */
     int* cjs = (int*)(sm_nextSlotPtr);
     /* the cjs buffer's use expects a base pointer offset for pairs of warps in the j-concurrent execution */
+    /* CUDA code
     cjs += tidxz * c_nbnxnGpuClusterpairSplit * c_nbnxnGpuJgroupSize;
     sm_nextSlotPtr += (NTHREAD_Z * c_nbnxnGpuClusterpairSplit * c_nbnxnGpuJgroupSize * sizeof(*cjs));
+    */
+    cjs += tidxz * c_nbnxnGpuJgroupSize;
+    sm_nextSlotPtr += (NTHREAD_Z * c_nbnxnGpuJgroupSize * sizeof(*cjs));
 
 #    ifndef LJ_COMB
     /* shmem buffer for i atom-type pre-loading */
@@ -280,19 +291,21 @@ __launch_bounds__(THREADS_PER_BLOCK)
     sm_nextSlotPtr += (c_numClPerSupercl * c_clSize * sizeof(*ljcpib));
 #    endif
     /*********************************************************************/
-
-    nb_sci     = pl_sci[bidx];         /* my i super-cluster's index = current bidx */
-    sci        = nb_sci.sci;           /* super-cluster */
-    cij4_start = nb_sci.cj4_ind_start; /* first ...*/
-    cij4_end   = nb_sci.cj4_ind_end;   /* and last index of j clusters */
+    if(tidx == 0)
+    *nb_sci     = pl_sci[bidx];         /* my i super-cluster's index = current bidx */
+    __syncthreads();
+    sci        = nb_sci->sci;           /* super-cluster */
+   // cij4_start = nb_sci->cj4_ind_start; /* first ...*/
+   // cij4_end   = nb_sci->cj4_ind_end;   /* and last index of j clusters */
+    nb_sci_shift = nb_sci->shift;
 
     if (tidxz == 0)
     {
         /* Pre-load i-atom x and q into shared memory */
-        ci = sci * c_numClPerSupercl + tidxj;
+        ci = nb_sci->sci * c_numClPerSupercl + tidxj;
         ai = ci * c_clSize + tidxi;
 
-        float* shiftptr = (float*)&shift_vec[nb_sci.shift];
+        float* shiftptr = (float*)&shift_vec[nb_sci_shift];
         xqbuf = xq[ai] + make_float4(LDG(shiftptr), LDG(shiftptr + 1), LDG(shiftptr + 2), 0.0f);
         xqbuf.w *= nbparam.epsfac;
         xqib[tidxj * c_clSize + tidxi] = xqbuf;
@@ -324,7 +337,7 @@ __launch_bounds__(THREADS_PER_BLOCK)
     E_el         = 0.0f;
 
 #        ifdef EXCLUSION_FORCES /* Ewald or RF */
-    if (nb_sci.shift == CENTRAL && pl_cj4[cij4_start].cj[0] == sci * c_numClPerSupercl)
+    if (nb_sci_shift == CENTRAL && pl_cj4[nb_sci->cj4_ind_start].cj[0] == nb_sci->sci * c_numClPerSupercl)
     {
         /* we have the diagonal: add the charge and LJ self interaction energy term */
         for (i = 0; i < c_numClPerSupercl; i++)
@@ -337,11 +350,11 @@ __launch_bounds__(THREADS_PER_BLOCK)
 #            ifdef LJ_EWALD
 #                if DISABLE_CUDA_TEXTURES
             E_lj += LDG(
-                    &nbparam.nbfp[atom_types[(sci * c_numClPerSupercl + i) * c_clSize + tidxi] * (ntypes + 1) * 2]);
+                    &nbparam.nbfp[atom_types[(nb_sci->sci * c_numClPerSupercl + i) * c_clSize + tidxi] * (ntypes + 1) * 2]);
 #                else
             E_lj += tex1Dfetch<float>(
                     nbparam.nbfp_texobj,
-                    atom_types[(sci * c_numClPerSupercl + i) * c_clSize + tidxi] * (ntypes + 1) * 2);
+                    atom_types[(nb_sci->sci * c_numClPerSupercl + i) * c_clSize + tidxi] * (ntypes + 1) * 2);
 #                endif
 #            endif
         }
@@ -367,14 +380,14 @@ __launch_bounds__(THREADS_PER_BLOCK)
 #    endif /* CALC_ENERGIES */
 
 #    ifdef EXCLUSION_FORCES
-    const int nonSelfInteraction = !(nb_sci.shift == CENTRAL & tidxj <= tidxi);
+    const int nonSelfInteraction = !(nb_sci_shift == CENTRAL & tidxj <= tidxi);
 #    endif
 
     /* loop over the j clusters = seen by any of the atoms in the current super-cluster;
      * The loop stride NTHREAD_Z ensures that consecutive warps-pairs are assigned
      * consecutive j4's entries.
      */
-    for (j4 = cij4_start + tidxz; j4 < cij4_end; j4 += NTHREAD_Z)
+    for (j4 = nb_sci->cj4_ind_start + tidxz; j4 < nb_sci->cj4_ind_end; j4 += NTHREAD_Z)
     {
         wexcl_idx = pl_cj4[j4].imei[widx].excl_ind;
         imask     = pl_cj4[j4].imei[widx].imask;
@@ -385,9 +398,15 @@ __launch_bounds__(THREADS_PER_BLOCK)
 #    endif
         {
             /* Pre-load cj into shared memory on both warps separately */
+            /* CUDA code
             if ((tidxj == 0 | tidxj == 4) & (tidxi < c_nbnxnGpuJgroupSize))
             {
                 cjs[tidxi + tidxj * c_nbnxnGpuJgroupSize / c_splitClSize] = pl_cj4[j4].cj[tidxi];
+            }
+            */
+            if ((tidxj == 0) & (tidxi < c_nbnxnGpuJgroupSize))
+            {
+                cjs[tidxi] = pl_cj4[j4].cj[tidxi];
             }
             gmx_syncwarp(c_fullWarpMask);
 
@@ -401,7 +420,7 @@ __launch_bounds__(THREADS_PER_BLOCK)
                 {
                     mask_ji = (1U << (jm * c_numClPerSupercl));
 
-                    cj = cjs[jm + (tidxj & 4) * c_nbnxnGpuJgroupSize / c_splitClSize];
+                    cj = cjs[jm];
                     aj = cj * c_clSize + tidxj;
 
                     /* load j atom data */
@@ -423,7 +442,7 @@ __launch_bounds__(THREADS_PER_BLOCK)
                     {
                         if (imask & mask_ji)
                         {
-                            ci = sci * c_numClPerSupercl + i; /* i cluster index */
+                            ci = nb_sci->sci * c_numClPerSupercl + i; /* i cluster index */
 
                             /* all threads load an atom from i cluster ci into shmem! */
                             xqbuf = xqib[i * c_clSize + tidxi];
@@ -621,7 +640,7 @@ __launch_bounds__(THREADS_PER_BLOCK)
     }
 
     /* skip central shifts when summing shift forces */
-    if (nb_sci.shift == CENTRAL)
+    if (nb_sci_shift == CENTRAL)
     {
         bCalcFshift = false;
     }
@@ -631,14 +650,29 @@ __launch_bounds__(THREADS_PER_BLOCK)
     /* reduce i forces */
     for (i = 0; i < c_numClPerSupercl; i++)
     {
-        ai = (sci * c_numClPerSupercl + i) * c_clSize + tidxi;
+        ai = (nb_sci->sci * c_numClPerSupercl + i) * c_clSize + tidxi;
         reduce_force_i_warp_shfl(fci_buf[i], f, &fshift_buf, bCalcFshift, tidxj, ai, c_fullWarpMask);
     }
 
     /* add up local shift forces into global mem, tidxj indexes x,y,z */
+    /* CUDA code
     if (bCalcFshift && (tidxj & 3) < 3)
     {
         atomicAdd(&(atdat.fshift[nb_sci.shift].x) + (tidxj & 3), fshift_buf);
+    }
+    */
+    if (bCalcFshift)
+    {
+        if (tidxj < 3)
+	    {
+	        fshift_buf += gmx_shfl_down_sync(c_fullWarpMask, fshift_buf, 1, 64);
+	        fshift_buf += gmx_shfl_down_sync(c_fullWarpMask, fshift_buf, 2, 64);
+	        fshift_buf += gmx_shfl_down_sync(c_fullWarpMask, fshift_buf, 4, 64);
+        }
+	    if (tidxi == 0)
+	    {
+                atomicAdd(&(atdat.fshift[nb_sci_shift].x) + tidxj, fshift_buf);
+	    }
     }
 
 #    ifdef CALC_ENERGIES

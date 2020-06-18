@@ -340,7 +340,8 @@ static inline int calc_shmem_required_nonbonded(const int               num_thre
     /* i-atom x+q in shared memory */
     shmem = c_numClPerSupercl * c_clSize * sizeof(float4);
     /* cj in shared memory, for each warp separately */
-    shmem += num_threads_z * c_nbnxnGpuClusterpairSplit * c_nbnxnGpuJgroupSize * sizeof(int);
+    //shmem += num_threads_z * c_nbnxnGpuClusterpairSplit * c_nbnxnGpuJgroupSize * sizeof(int);
+    shmem += num_threads_z * c_nbnxnGpuJgroupSize * sizeof(int);
 
     if (nbp->vdwtype == evdwCuCUTCOMBGEOM || nbp->vdwtype == evdwCuCUTCOMBLB)
     {
@@ -542,7 +543,7 @@ void gpu_launch_kernel(gmx_nbnxn_cuda_t* nb, const gmx::StepWorkload& stepWork, 
     config.blockSize[1]     = c_clSize;
     config.blockSize[2]     = num_threads_z;
     config.gridSize[0]      = nblock;
-    config.sharedMemorySize = calc_shmem_required_nonbonded(num_threads_z, nb->dev_info, nbp);
+    config.sharedMemorySize = calc_shmem_required_nonbonded(num_threads_z, nb->dev_info, nbp) + 16;
     config.stream           = stream;
 
     if (debug)

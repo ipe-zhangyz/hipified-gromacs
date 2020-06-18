@@ -474,24 +474,24 @@ static __forceinline__ __device__ void
 static __forceinline__ __device__ void
                        reduce_force_j_warp_shfl(float3 f, float3* fout, int tidxi, int aidx, const unsigned int activemask)
 {
-    f.x += gmx_shfl_down_sync(activemask, f.x, 1);
-    f.y += gmx_shfl_up_sync(activemask, f.y, 1);
-    f.z += gmx_shfl_down_sync(activemask, f.z, 1);
+    f.x += gmx_shfl_down_sync(activemask, f.x, 1, 64);
+    f.y += gmx_shfl_up_sync(activemask, f.y, 1, 64);
+    f.z += gmx_shfl_down_sync(activemask, f.z, 1, 64);
 
     if (tidxi & 1)
     {
         f.x = f.y;
     }
 
-    f.x += gmx_shfl_down_sync(activemask, f.x, 2);
-    f.z += gmx_shfl_up_sync(activemask, f.z, 2);
+    f.x += gmx_shfl_down_sync(activemask, f.x, 2, 64);
+    f.z += gmx_shfl_up_sync(activemask, f.z, 2, 64);
 
     if (tidxi & 2)
     {
         f.x = f.z;
     }
 
-    f.x += gmx_shfl_down_sync(activemask, f.x, 4);
+    f.x += gmx_shfl_down_sync(activemask, f.x, 4, 64);
 
     if (tidxi < 3)
     {
@@ -606,27 +606,31 @@ static __forceinline__ __device__ void reduce_force_i_warp_shfl(float3          
                                                                 int                aidx,
                                                                 const unsigned int activemask)
 {
-    fin.x += gmx_shfl_down_sync(activemask, fin.x, c_clSize);
-    fin.y += gmx_shfl_up_sync(activemask, fin.y, c_clSize);
-    fin.z += gmx_shfl_down_sync(activemask, fin.z, c_clSize);
+    fin.x += gmx_shfl_down_sync(activemask, fin.x, c_clSize, 64);
+    fin.y += gmx_shfl_up_sync(activemask, fin.y, c_clSize, 64);
+    fin.z += gmx_shfl_down_sync(activemask, fin.z, c_clSize, 64);
 
     if (tidxj & 1)
     {
         fin.x = fin.y;
     }
 
-    fin.x += gmx_shfl_down_sync(activemask, fin.x, 2 * c_clSize);
-    fin.z += gmx_shfl_up_sync(activemask, fin.z, 2 * c_clSize);
+    fin.x += gmx_shfl_down_sync(activemask, fin.x, 2 * c_clSize, 64);
+    fin.z += gmx_shfl_up_sync(activemask, fin.z, 2 * c_clSize, 64);
 
     if (tidxj & 2)
     {
         fin.x = fin.z;
     }
 
+    fin.x += gmx_shfl_down_sync(activemask, fin.x, 4 * c_clSize, 64);
+
     /* Threads 0,1,2 and 4,5,6 increment x,y,z for their warp */
-    if ((tidxj & 3) < 3)
+    //if ((tidxj & 3) < 3)
+    if (tidxj < 3)
     {
-        atomicAdd(&fout[aidx].x + (tidxj & 3), fin.x);
+        //atomicAdd(&fout[aidx].x + (tidxj & 3), fin.x);
+        atomicAdd(&fout[aidx].x + tidxj, fin.x);
 
         if (bCalcFshift)
         {
@@ -679,16 +683,19 @@ static __forceinline__ __device__ void
     int i, sh;
 
     sh = 1;
-#    pragma unroll 5
-    for (i = 0; i < 5; i++)
+//#    pragma unroll 5
+#    pragma unroll 6
+    //for (i = 0; i < 5; i++)
+    for (i = 0; i < 6; i++)
     {
-        E_lj += gmx_shfl_down_sync(activemask, E_lj, sh);
-        E_el += gmx_shfl_down_sync(activemask, E_el, sh);
+        E_lj += gmx_shfl_down_sync(activemask, E_lj, sh, 64);
+        E_el += gmx_shfl_down_sync(activemask, E_el, sh, 64);
         sh += sh;
     }
 
     /* The first thread in the warp writes the reduced energies */
-    if (tidx == 0 || tidx == warp_size)
+    //if (tidx == 0 || tidx == warp_size)
+    if (tidx == 0)
     {
         atomicAdd(e_lj, E_lj);
         atomicAdd(e_el, E_el);

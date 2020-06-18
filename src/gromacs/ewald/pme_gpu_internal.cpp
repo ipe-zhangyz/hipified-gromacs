@@ -1493,9 +1493,8 @@ void pme_gpu_solve(const PmeGpu* pmeGpu, t_complex* h_grid, GridOrdering gridOrd
     if(computeEnergyAndVirial)
     {
        const int solve_blocks = config.gridSize[0] * config.gridSize[1] * config.gridSize[2];
-       const int add_blocks  = solve_blocks / 1024 + 1;
-       hipLaunchKernelGGL(pme_solve_reduceEnergy, dim3(add_blocks),
-                          dim3(1024), add_blocks/64 + 1, pmeGpu->archSpecific->pmeStream, kernelParamsPtr->constants.d_virialAndEnergy + 7, 
+       hipLaunchKernelGGL(pme_solve_reduceEnergy, dim3(1),
+                          dim3(1024), 16, pmeGpu->archSpecific->pmeStream, kernelParamsPtr->constants.d_virialAndEnergy + 7, 
                           kernelParamsPtr->constants.d_virialAndEnergy, 1024, solve_blocks);
      }  
 #endif
